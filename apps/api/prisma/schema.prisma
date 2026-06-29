@@ -1,0 +1,18 @@
+// PayPilot database schema.
+//
+// Foundation scope: datasource + generator plumbing only. NO business models
+// are defined here (no fake/placeholder models). Feature specs add models via
+// their own Prisma migrations following the conventions in docs/conventions.md.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: the connection URL lives in prisma.config.ts (Migrate/CLI) and is
+  // supplied at runtime via the @prisma/adapter-pg driver adapter (PrismaService).
+}

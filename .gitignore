@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Turborepo
+.turbo/
+
+# Test coverage
+coverage/
+
+# Prisma generated client (build artifact — regenerated from schema)
+apps/api/src/generated/
+
+# Environment files (never commit real secrets)
+.env
+.env.*
+!.env.example
+
+# Logs / OS
+*.log
+.DS_Store
+
+# Windows crash dumps
+*.stackdump

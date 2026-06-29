@@ -1,0 +1,29 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# --- Supply-chain hardening (see docs/supply-chain.md) ---
+savePrefix: ""
+minimumReleaseAge: 1440
+blockExoticSubdeps: true
+auditLevel: high
+
+# Force-patch transitive vulnerabilities (see docs/supply-chain.md).
+# multer <2.2.0 (DoS) pulled in by @nestjs/platform-express; not exercised
+# (no multipart endpoints), but patched to clear the high-severity advisory.
+overrides:
+  multer: ">=2.2.0"
+
+allowBuilds:
+  # Prisma needs its postinstall to fetch the query/schema engines (required).
+  "@prisma/engines": true
+  prisma: true
+  # swc & unrs ship prebuilt platform binaries — no build script needed.
+  "@swc/core": false
+  unrs-resolver: false
+  # Next's image lib ships prebuilt platform binaries — build script not needed.
+  sharp: false
+  # Testcontainers transitive deps — optional native builds with JS fallbacks.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

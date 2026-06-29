@@ -1,0 +1,11 @@
+**/dist/**
+**/.next/**
+**/node_modules/**
+**/coverage/**
+apps/api/src/generated/**
+pnpm-lock.yaml
+
+# SDD framework + agent tooling docs (managed outside the app build)
+.sdd/
+.claude/
+CLAUDE.md

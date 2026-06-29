@@ -1,0 +1,26 @@
+{
+  "name": "@paypilot/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@swc/core": "1.15.43",
+    "@swc/jest": "0.2.39",
+    "@types/jest": "30.0.0",
+    "jest": "30.4.2",
+    "typescript": "6.0.3"
+  }
+}

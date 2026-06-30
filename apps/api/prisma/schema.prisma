@@ -29,5 +29,38 @@ model User {
   createdAt    DateTime @default(now()) @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @db.Timestamptz(6)
 
+  transactions Transaction[]
+
   @@map("users")
+}
+
+// Generic transaction ledger (manual-expenses). Internal field names are
+// generic (`transactionDate`, `categoryLabel`); the expenses API maps them to
+// `expenseDate`/`category`. Money is BIGINT minor units (> 0); dates are
+// date-only; audit timestamps are UTC. `onDelete: Restrict` — no purge via user
+// deletion in this spec.
+enum TransactionType {
+  EXPENSE
+}
+
+enum TransactionSource {
+  MANUAL
+}
+
+model Transaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  userId          String            @db.Uuid
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type            TransactionType
+  source          TransactionSource
+  amountMinor     BigInt
+  currency        String            @db.Char(3)
+  transactionDate DateTime          @db.Date
+  description     String            @db.VarChar(255)
+  categoryLabel   String?           @db.VarChar(100)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
+
+  @@index([userId, transactionDate, id])
+  @@map("transactions")
 }

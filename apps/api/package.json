@@ -9,13 +9,14 @@
     "type-check": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "test": "jest",
-    "test:integration": "jest --config jest.integration.config.js"
+    "test:integration": "cross-env TZ=America/Sao_Paulo jest --config jest.integration.config.js"
   },
   "dependencies": {
     "@nestjs/common": "11.1.27",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.1.27",
     "@nestjs/jwt": "11.0.2",
+    "@nestjs/mapped-types": "2.1.1",
     "@nestjs/platform-express": "11.1.27",
     "@nestjs/throttler": "6.5.0",
     "@node-rs/argon2": "2.0.2",
@@ -43,6 +44,7 @@
     "@types/node": "26.0.1",
     "@types/pg": "8.20.0",
     "@types/supertest": "7.2.0",
+    "cross-env": "10.1.0",
     "dotenv": "17.4.2",
     "jest": "30.4.2",
     "prisma": "7.8.0",

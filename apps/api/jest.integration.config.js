@@ -11,4 +11,7 @@ module.exports = {
   },
   // Testcontainers needs time to start an ephemeral PostgreSQL.
   testTimeout: 120000,
+  // Run integration suites serially — one ephemeral PostgreSQL container at a
+  // time (parallel containers contend for Docker resources/ports).
+  maxWorkers: 1,
 };

@@ -85,6 +85,21 @@ Rate limits (per client IP; windows parsed by `ms`; the in-memory limiter is
 For local development the defaults in `.env.example` work out of the box (set a
 real `JWT_SECRET`).
 
+### Expenses
+
+Manual expense CRUD over a generic transaction ledger (all routes require
+`Authorization: Bearer <token>`; every expense is owner-scoped):
+
+- `POST /api/v1/expenses` — create (201)
+- `GET /api/v1/expenses` — list (paginated: `page`, `pageSize` ≤ 100; inclusive `from`/`to` date filter)
+- `GET /api/v1/expenses/:id` — fetch one (404 if not owned)
+- `PATCH /api/v1/expenses/:id` — partial update of editable fields
+- `DELETE /api/v1/expenses/:id` — hard delete (204)
+
+Request/response notes: `amountMinor` is a **positive integer** in minor units
+(JSON number, MVP); `currency` is uppercase **BRL** (MVP); `expenseDate` is a
+`YYYY-MM-DD` string. Cross-user access returns 404 (no disclosure).
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

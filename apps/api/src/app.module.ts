@@ -6,6 +6,7 @@ import { JwtAuthGuard } from "./auth/jwt-auth.guard";
 import { ClockModule } from "./common/clock.module";
 import { APP_CONFIG, type AppConfig } from "./config/app-config";
 import { AppConfigModule } from "./config/config.module";
+import { ExpensesModule } from "./expenses/expenses.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
 
@@ -33,6 +34,7 @@ import { PrismaModule } from "./prisma/prisma.module";
       }),
     }),
     AuthModule,
+    ExpensesModule,
     HealthModule,
   ],
   providers: [

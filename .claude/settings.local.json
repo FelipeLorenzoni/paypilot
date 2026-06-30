@@ -64,7 +64,10 @@
       "Bash(echo \"node=$\\(node -v\\) pnpm=$\\(pnpm -v\\)\")",
       "Bash(pnpm --filter @paypilot/api exec node -e \"const a=require\\('@node-rs/argon2'\\); console.log\\('argon2 ok:', typeof a.hash\\)\")",
       "Bash(pnpm --filter @paypilot/api exec prisma migrate dev --name add_users)",
-      "Bash(grep -E '\\(^|/\\)\\\\.env$|/generated/|node_modules/|/dist/')"
+      "Bash(grep -E '\\(^|/\\)\\\\.env$|/generated/|node_modules/|/dist/')",
+      "Bash(GIT_SSH_COMMAND=\"C:/Windows/System32/OpenSSH/ssh.exe -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30\" git push)",
+      "Bash(pnpm --filter @paypilot/api exec prisma migrate dev --name add_transactions)",
+      "Bash(pnpm --filter @paypilot/api exec cross-env TZ=America/Sao_Paulo jest --config jest.integration.config.js expenses)"
     ]
   }
 }

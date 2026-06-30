@@ -88,11 +88,11 @@ sequenceDiagram
 
 | Component | Intent | Reqs |
 |-----------|--------|------|
-| RecurringBillsController | `/api/v1/recurring-bills` CRUD | 1–4 |
+| RecurringBillsController | `/api/v1/recurring-bills` CRUD; `DELETE` = deactivate → 204 | 1–4 |
 | RecurringBillsService | validation, money/date, ownership | 1–4,10,11 |
 | RecurringBillsRepository | owner-scoped Prisma access | 1–4,10 |
 | GenerationService | `generateForPeriod(period)` — eligibility, clamp, idempotent insert, summary | 5–8,10 |
-| GenerationScheduler | `@nestjs/schedule` cron → `generateForPeriod(currentPeriod)` | 9 |
+| GenerationScheduler | `@nestjs/schedule` cron → `generateForPeriod(deriveCurrentPeriod(clock))` (UTC month) | 9 |
 | (local CLI script) | trigger generation for a `YYYY-MM` (ops/testing) | 9 |
 | ExpensesRepository (changed) | add `source: "MANUAL"` to all where-clauses | 13 |
 
@@ -114,7 +114,10 @@ interface GenerationService {
 ### DTOs (bill CRUD)
 - `CreateRecurringBillDto`: `amountMinor` (`@IsInt @IsPositive @Max(MAX_SAFE_INTEGER)`), `currency` (trim+uppercase, `@IsIn(["BRL"])`), `dayOfMonth` (`@IsInt @Min(1) @Max(31)`), `description` (trim, `@IsNotEmpty`, `@MaxLength(255)`), `category?` (trim, `@MaxLength(100)`), `startDate` (`YYYY-MM-DD` calendar), `endDate?` (`YYYY-MM-DD`); cross-field `endDate >= startDate` (else 400).
 - `UpdateRecurringBillDto = PartialType` (editable fields only; never owner/id/timestamps; empty body → 400).
-- `ListRecurringBillsQueryDto`: `page`/`pageSize` (`@Type(Number)`, max 100), optional `active` filter.
+- `ListRecurringBillsQueryDto`: `page`/`pageSize` (`@Type(Number)`, max 100); optional `active` filter with an **explicit boolean parser** (do not rely on `@Type(() => Boolean)`, which coerces any non-empty string to `true`): `"true" → true`, `"false" → false`, `undefined → no filter`, **any other value → 400 `VALIDATION_ERROR`**.
+
+### Delete / Deactivate
+`DELETE /api/v1/recurring-bills/:id` **deactivates** the bill (sets `isActive=false`) and returns **`204 No Content`**. It is never a hard delete and never deletes or alters already-generated transactions; deactivation only stops future generation.
 
 ## Data Models
 
@@ -167,7 +170,7 @@ model Transaction {
 `ExpensesRepository` is updated so every where-clause includes `source: "MANUAL"` (findOwned/findMany/updateOwned/deleteOwned). Manual endpoints therefore cannot read/update/delete a `RECURRING` row (returns 404). Regression tests assert this. Recurring-bill endpoints never expose edit/delete of generated transactions.
 
 ## Scheduler (non-production-grade)
-`@nestjs/schedule` runs an in-process cron that calls `generateForPeriod(currentPeriod)`. Documented caveats: in a **multi-instance** deploy multiple instances may fire simultaneously; this is **safe only because DB-level idempotency (A1) is the source of truth** — no in-memory lock is relied on for financial correctness. BullMQ/Redis remain out of scope (revisit in a future ops/deployment spec).
+`@nestjs/schedule` runs an in-process cron that calls `generateForPeriod(currentPeriod)`. The cron derives `currentPeriod` via the **`Clock` abstraction** (`CLOCK` port) using the **UTC calendar month** of `clock.now()` (`deriveCurrentPeriod(clock) → "YYYY-MM"` from `getUTCFullYear`/`getUTCMonth`) — **never** server-local time or `Date.now()` directly, so the target period is deterministic and timezone-independent (R7.4). Documented caveats: in a **multi-instance** deploy multiple instances may fire simultaneously; this is **safe only because DB-level idempotency (A1) is the source of truth** — no in-memory lock is relied on for financial correctness. BullMQ/Redis remain out of scope (revisit in a future ops/deployment spec).
 
 ## Controlled Trigger (no admin/RBAC)
 Generation is exposed as the internal `GenerationService.generateForPeriod(period)` (called by the cron) and, optionally, a **local CLI script** taking a `YYYY-MM` argument. **No public HTTP trigger.** Any test/local-only route must not be registered in the production `AppModule`.

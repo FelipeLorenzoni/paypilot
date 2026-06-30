@@ -9,6 +9,7 @@ import { AppConfigModule } from "./config/config.module";
 import { ExpensesModule } from "./expenses/expenses.module";
 import { HealthModule } from "./health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { RecurringBillsModule } from "./recurring-bills/recurring-bills.module";
 
 /**
  * Root application module. The foundation cross-cutting modules plus auth.
@@ -35,6 +36,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     }),
     AuthModule,
     ExpensesModule,
+    RecurringBillsModule,
     HealthModule,
   ],
   providers: [

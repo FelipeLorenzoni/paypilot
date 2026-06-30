@@ -100,6 +100,39 @@ Request/response notes: `amountMinor` is a **positive integer** in minor units
 (JSON number, MVP); `currency` is uppercase **BRL** (MVP); `expenseDate` is a
 `YYYY-MM-DD` string. Cross-user access returns 404 (no disclosure).
 
+### Recurring bills
+
+Recurring monthly bill definitions plus **idempotent** generation of ledger
+transactions (all routes require `Authorization: Bearer <token>`; owner-scoped):
+
+- `POST /api/v1/recurring-bills` — create (201)
+- `GET /api/v1/recurring-bills` — list (paginated: `page`, `pageSize` ≤ 100;
+  optional `active=true|false` filter — any other value is a 400)
+- `GET /api/v1/recurring-bills/:id` — fetch one (404 if not owned)
+- `PATCH /api/v1/recurring-bills/:id` — partial update of editable fields
+- `DELETE /api/v1/recurring-bills/:id` — **deactivate** (`isActive=false`),
+  returns 204; never hard-deletes and never removes already-generated
+  transactions
+
+Fields mirror expenses plus `dayOfMonth` (1–31, clamped to the last day of short
+months at generation), `startDate`, and optional `endDate` (`YYYY-MM-DD`,
+`endDate >= startDate`).
+
+**Generation.** A monthly job creates one `source = RECURRING` ledger
+transaction per eligible bill per period. It is idempotent at the database level
+(unique `(recurringBillId, periodKey)`), so retries and overlapping runs produce
+**exactly one** transaction per bill/period (financial-rules R3). Manual expense
+endpoints only ever touch `source = MANUAL` rows.
+
+- **Schedule:** an in-process cron (`@nestjs/schedule`) runs daily and derives
+  the target period from the **UTC calendar month** (via the `Clock` port), not
+  server-local time. This is **non-production-grade** (a multi-instance deploy
+  may double-fire; that is safe only because DB idempotency is the source of
+  truth). No Redis/BullMQ.
+- **Manual run (ops/local):** `pnpm --filter @paypilot/api generate:recurring
+2026-03` (omit the period to use the current UTC month). There is no public
+  HTTP generation endpoint.
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

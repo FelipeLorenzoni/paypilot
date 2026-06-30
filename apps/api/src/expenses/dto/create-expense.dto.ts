@@ -8,7 +8,7 @@ import {
   Max,
   MaxLength,
 } from "class-validator";
-import { IsIsoCalendarDate } from "./is-iso-date.validator";
+import { IsIsoCalendarDate } from "../../common/is-iso-date.validator";
 
 const trim = ({ value }: TransformFnParams): unknown =>
   typeof value === "string" ? value.trim() : value;

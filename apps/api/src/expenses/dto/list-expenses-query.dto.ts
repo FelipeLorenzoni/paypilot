@@ -1,6 +1,6 @@
 import { Type } from "class-transformer";
 import { IsInt, IsOptional, Max, Min } from "class-validator";
-import { IsIsoCalendarDate } from "./is-iso-date.validator";
+import { IsIsoCalendarDate } from "../../common/is-iso-date.validator";
 
 export class ListExpensesQueryDto {
   @IsOptional()

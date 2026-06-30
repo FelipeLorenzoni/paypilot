@@ -7,7 +7,7 @@
 
 ## 1. Source protection (manual-expenses hardening) — EARLY
 
-- [ ] 1.1 Scope `ExpensesRepository` to `source = MANUAL` + regression tests
+- [x] 1.1 Scope `ExpensesRepository` to `source = MANUAL` + regression tests
 
   **Goal**
   Prevent manual expense operations from ever touching a `RECURRING` ledger row, before recurring rows exist (R13).
@@ -35,7 +35,7 @@
 
 ## 2. Dependency: scheduler
 
-- [ ] 2.1 (P) Add `@nestjs/schedule` as an exact dependency
+- [x] 2.1 (P) Add `@nestjs/schedule` as an exact dependency
 
   **Goal**
   Bring in the in-process cron primitive (no external job infra).
@@ -62,7 +62,7 @@
 
 ## 3. Schema, idempotency link, and migration
 
-- [ ] 3.1 `RecurringBill` model + `Transaction` recurring link + `RECURRING` enum + CHECK
+- [x] 3.1 `RecurringBill` model + `Transaction` recurring link + `RECURRING` enum + CHECK
 
   **Goal**
   Persist bills and give the ledger a DB-level idempotency guarantee + valid-state constraint.
@@ -100,7 +100,7 @@
 
 ## 4. DTOs & validation
 
-- [ ] 4.1 (P) Create / Update / List DTOs for recurring bills
+- [x] 4.1 (P) Create / Update / List DTOs for recurring bills
 
   **Goal**
   Validate bill request shape at the API boundary.
@@ -108,13 +108,15 @@
   **Deliverables**
   - `CreateRecurringBillDto`: `amountMinor` (`@IsInt @IsPositive @Max(Number.MAX_SAFE_INTEGER)`), `currency` (trim+uppercase transform, `@IsIn(["BRL"])`), `dayOfMonth` (`@IsInt @Min(1) @Max(31)`), `description` (trim, `@IsNotEmpty`, `@MaxLength(255)`), `category?` (trim, `@MaxLength(100)`), `startDate` (`YYYY-MM-DD` regex + valid calendar date), `endDate?` (`YYYY-MM-DD`). Cross-field: when `endDate` is present, `endDate >= startDate` else 400.
   - `UpdateRecurringBillDto = PartialType(CreateRecurringBillDto)` (editable fields only; empty body → 400 via guard/validator). Never accepts `id`/owner/`isActive`/timestamps.
-  - `ListRecurringBillsQueryDto`: `page` (default 1, `@Type(() => Number) @IsInt @Min(1)`), `pageSize` (default 20, `@Type(() => Number) @IsInt @Min(1) @Max(100)`), `active?` (`@Type(() => Boolean)`/transform) optional filter.
+  - `ListRecurringBillsQueryDto`: `page` (default 1, `@Type(() => Number) @IsInt @Min(1)`), `pageSize` (default 20, `@Type(() => Number) @IsInt @Min(1) @Max(100)`), `active?` optional filter using an **explicit boolean parser** (see notes).
 
   **Implementation notes**
-  - `source`/owner/`id`/`isActive`/timestamps are NOT in any DTO; `ValidationPipe` (`forbidNonWhitelisted`) rejects unknown fields with 400. Numeric/boolean query params transformed before validation.
+  - `source`/owner/`id`/`isActive`/timestamps are NOT in any DTO; `ValidationPipe` (`forbidNonWhitelisted`) rejects unknown fields with 400. Numeric query params transformed before validation.
+  - **`active` parsing — do NOT use `@Type(() => Boolean)`** (it coerces any non-empty string, e.g. `"false"`, to `true`). Use an explicit `@Transform` that maps: `"true" → true`, `"false" → false`, `undefined → undefined` (no filter), and throws/marks invalid for **any other value** (e.g. set a sentinel that fails an `@IsBoolean()`), so the pipe returns **400 `VALIDATION_ERROR`**.
 
   **Acceptance criteria**
   - Invalid amount, non-BRL, `dayOfMonth` outside 1–31, empty/over-long description, `endDate < startDate`, `pageSize > 100`, empty PATCH body → 400 `VALIDATION_ERROR`.
+  - `active`: `"true"`/`"false"` parse to the boolean filter; omitted → no filter; **any other value (e.g. `"1"`, `"yes"`, `""`) → 400 `VALIDATION_ERROR`**.
 
   **Verification**
   - Covered by integration (9.1) + DTO unit checks where useful.
@@ -128,7 +130,7 @@
 
 ## 5. Mapper, period, clamp & eligibility helpers
 
-- [ ] 5.1 (P) RecurringBill mapper (reuse money/date boundary)
+- [x] 5.1 (P) RecurringBill mapper (reuse money/date boundary)
 
   **Goal**
   Single tested boundary between a `recurring_bills` row and the API/domain shape.
@@ -150,7 +152,7 @@
 
   _Requirements: 11.1, 11.8_
 
-- [ ] 5.2 (P) Period derivation, day-clamp, and eligibility helpers (timezone-safe)
+- [x] 5.2 (P) Period derivation, day-clamp, and eligibility helpers (timezone-safe)
 
   **Goal**
   Deterministic, timezone-independent period/date math for generation.
@@ -182,7 +184,7 @@
 
 ## 6. Repository, service, and generation
 
-- [ ] 6.1 RecurringBillsRepository (owner-scoped)
+- [x] 6.1 RecurringBillsRepository (owner-scoped)
 
   **Goal**
   Owner-scoped Prisma access enforcing isolation in the query.
@@ -205,7 +207,7 @@
 
   _Requirements: 2.1, 2.3, 3.1, 3.2, 4.1, 4.2, 10.1, 10.2_
 
-- [ ] 6.2 RecurringBillsService (CRUD + deactivate-on-delete)
+- [x] 6.2 RecurringBillsService (CRUD + deactivate-on-delete)
 
   **Goal**
   Orchestrate validation, money/date mapping, ownership, and the deactivate semantics.
@@ -230,7 +232,7 @@
 
   _Requirements: 1.1, 1.2, 1.5, 3.1, 3.3, 3.4, 3.5, 4.1, 4.3, 10.2, 11.1, 11.2, 11.3, 11.8_
 
-- [ ] 6.3 GenerationService (`generateForPeriod`, idempotent)
+- [x] 6.3 GenerationService (`generateForPeriod`, idempotent)
 
   **Goal**
   Idempotently generate one snapshot transaction per eligible (bill, period), concurrency-safe.
@@ -259,7 +261,7 @@
 
 ## 7. Scheduler, trigger, controller & module
 
-- [ ] 7.1 GenerationScheduler (cron) + local CLI trigger
+- [x] 7.1 GenerationScheduler (cron) + local CLI trigger
 
   **Goal**
   Run generation on a schedule for the timezone-safe current period, and allow controlled manual runs — no public HTTP.
@@ -283,7 +285,7 @@
 
   _Requirements: 9.1, 9.2, 9.3, 9.4, 7.5_
 
-- [ ] 7.2 RecurringBillsController + RecurringBillsModule
+- [x] 7.2 RecurringBillsController + RecurringBillsModule
 
   **Goal**
   Expose `/api/v1/recurring-bills` CRUD, protected by the global guard; wire the module.
@@ -314,7 +316,7 @@
 
 ## 9. Integration & final gate
 
-- [ ] 9.1 Recurring-bills + generation integration suite (Testcontainers)
+- [x] 9.1 Recurring-bills + generation integration suite (Testcontainers)
 
   **Goal**
   Prove CRUD, isolation, idempotency under concurrency, eligibility/clamp, and deactivate semantics against real PostgreSQL.
@@ -323,7 +325,7 @@
   - `apps/api/test/recurring-bills.int.spec.ts` using Testcontainers + `migrate deploy` + the global app setup (guard/pipe/filter/request-id), registering users via the auth flow for tokens. Generation invoked via the internal `GenerationService`/CLI path (not HTTP).
 
   **Acceptance criteria** (all pass; suite exits non-zero on failure)
-  - **Bill CRUD**: create → 201 `RecurringBillResponse` (`amountMinor` number, dates `YYYY-MM-DD`); validation 400s (amount, BRL, `dayOfMonth`, `endDate<startDate`, empty PATCH); list paginated, own-only, deterministic order.
+  - **Bill CRUD**: create → 201 `RecurringBillResponse` (`amountMinor` number, dates `YYYY-MM-DD`); validation 400s (amount, BRL, `dayOfMonth`, `endDate<startDate`, empty PATCH, `active` not in {`true`,`false`}); list paginated, own-only, deterministic order; `active=true/false` filters correctly, omitted returns all.
   - **Isolation**: user B cannot read/update/deactivate user A's bill → 404.
   - **Delete = deactivate**: `DELETE /:id` → 204, bill `isActive=false`; a transaction already generated for a past period **still exists** afterward.
   - **Idempotency / R3**: generate same (bill, period) twice → exactly one row, `skipped=1` on rerun; **concurrent** `Promise.all([generateForPeriod(p), generateForPeriod(p)])` → exactly one row; rerun does **not mutate** the existing transaction (compare snapshot fields + `createdAt`).
@@ -339,7 +341,7 @@
 
   _Requirements: 2.2, 3.5, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.5, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.2, 8.1, 8.2, 8.4, 9.4, 9.5, 10.1, 10.3, 10.4, 12.4_
 
-- [ ] 9.2 Source-protection + CHECK-constraint integration assertions
+- [x] 9.2 Source-protection + CHECK-constraint integration assertions
 
   **Goal**
   Prove ledger source protection (R13) and reject invalid link states at the DB.
@@ -362,7 +364,7 @@
 
   _Requirements: 6.1, 12.2, 13.1, 13.2, 13.3, 13.4_
 
-- [ ] 9.3 README + final quality gate
+- [x] 9.3 README + final quality gate
 
   **Goal**
   Document the recurring-bills endpoints + generation, and confirm the monorepo gate is green.

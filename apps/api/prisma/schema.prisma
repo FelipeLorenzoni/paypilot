@@ -29,7 +29,8 @@ model User {
   createdAt    DateTime @default(now()) @db.Timestamptz(6)
   updatedAt    DateTime @updatedAt @db.Timestamptz(6)
 
-  transactions Transaction[]
+  transactions   Transaction[]
+  recurringBills RecurringBill[]
 
   @@map("users")
 }
@@ -45,6 +46,7 @@ enum TransactionType {
 
 enum TransactionSource {
   MANUAL
+  RECURRING
 }
 
 model Transaction {
@@ -58,9 +60,45 @@ model Transaction {
   transactionDate DateTime          @db.Date
   description     String            @db.VarChar(255)
   categoryLabel   String?           @db.VarChar(100)
+  // Recurring-bill link (recurring-bills). NULL for MANUAL rows; both set for
+  // RECURRING rows. The composite unique gives the DB-level idempotency
+  // guarantee (financial-rules R3): at most one generated row per (bill,
+  // period). Postgres treats NULLs as distinct, so MANUAL rows never collide.
+  // A CHECK constraint (added in the migration) enforces the valid link states.
+  recurringBillId String?           @db.Uuid
+  recurringBill   RecurringBill?    @relation(fields: [recurringBillId], references: [id], onDelete: Restrict)
+  periodKey       String?           @db.Char(7) // "YYYY-MM"
   createdAt       DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
 
+  @@unique([recurringBillId, periodKey])
   @@index([userId, transactionDate, id])
   @@map("transactions")
+}
+
+// Recurring monthly bill definition (recurring-bills). Money is BIGINT minor
+// units (> 0); `dayOfMonth` is 1–31 (clamped to month length at generation);
+// `startDate`/`endDate` are date-only; audit timestamps are UTC. `isActive`
+// supports deactivation (DELETE deactivates rather than hard-deletes, to
+// preserve generated history). `onDelete: Restrict` — generated transactions
+// reference the bill, so a bill can't be removed out from under them.
+model RecurringBill {
+  id            String        @id @default(uuid()) @db.Uuid
+  userId        String        @db.Uuid
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  amountMinor   BigInt
+  currency      String        @db.Char(3)
+  dayOfMonth    Int           @db.SmallInt
+  description   String        @db.VarChar(255)
+  categoryLabel String?       @db.VarChar(100)
+  startDate     DateTime      @db.Date
+  endDate       DateTime?     @db.Date
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @db.Timestamptz(6)
+
+  transactions  Transaction[]
+
+  @@index([userId])
+  @@map("recurring_bills")
 }

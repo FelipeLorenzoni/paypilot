@@ -52,7 +52,19 @@
       "Bash(echo \"name=$\\(git config user.name\\)\")",
       "Bash(echo \"email=$\\(git config user.email\\)\")",
       "Bash(git add *)",
-      "Bash(grep -E '\\(^|/\\)\\\\.env$|node_modules/|/generated/|/dist/|\\\\.next/')"
+      "Bash(grep -E '\\(^|/\\)\\\\.env$|node_modules/|/generated/|/dist/|\\\\.next/')",
+      "Bash(echo \"gpgsign=$\\(git config commit.gpgsign\\)  format=$\\(git config gpg.format\\)\")",
+      "Bash(mkdir -p /c/Users/felip/.ssh)",
+      "Bash(\"/c/Windows/System32/OpenSSH/ssh-add.exe\" -L)",
+      "Bash(grep -E ' GitHub$')",
+      "Bash(sed -E 's/\\(AAAA[A-Za-z0-9+/]{16}\\).*/\\\\1.../' /c/Users/felip/.ssh/paypilot_github.pub)",
+      "Bash(echo \"core.sshCommand=$\\(git config core.sshCommand\\)\")",
+      "Bash(echo \"user.signingkey=$\\(git config user.signingkey\\)\")",
+      "Bash(git ls-remote *)",
+      "Bash(echo \"node=$\\(node -v\\) pnpm=$\\(pnpm -v\\)\")",
+      "Bash(pnpm --filter @paypilot/api exec node -e \"const a=require\\('@node-rs/argon2'\\); console.log\\('argon2 ok:', typeof a.hash\\)\")",
+      "Bash(pnpm --filter @paypilot/api exec prisma migrate dev --name add_users)",
+      "Bash(grep -E '\\(^|/\\)\\\\.env$|/generated/|node_modules/|/dist/')"
     ]
   }
 }

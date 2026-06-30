@@ -1,7 +1,10 @@
 import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
+import { Public } from "../auth/public.decorator";
 import { PrismaService } from "../prisma/prisma.service";
 
-/** Health endpoints under /api/v1/health (liveness + readiness). */
+/** Health endpoints under /api/v1/health (liveness + readiness). Public — must
+ * stay unauthenticated under the global JwtAuthGuard. */
+@Public()
 @Controller("health")
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}

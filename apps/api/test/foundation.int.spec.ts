@@ -15,6 +15,7 @@ import {
 import { IsNotEmpty, IsString } from "class-validator";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
+import { Public } from "../src/auth/public.decorator";
 import { AllExceptionsFilter } from "../src/common/all-exceptions.filter";
 import { requestIdMiddleware } from "../src/common/request-id";
 import { PrismaService } from "../src/prisma/prisma.service";
@@ -27,6 +28,9 @@ class CreateProbeDto {
   name!: string;
 }
 
+// Public so the global JwtAuthGuard (added by auth-jwt) doesn't shadow the
+// validation pipe under test.
+@Public()
 @Controller("__test/probe")
 class TestProbeController {
   @Post()
@@ -46,6 +50,8 @@ describe("Foundation integration (real PostgreSQL via Testcontainers)", () => {
     container = await new PostgreSqlContainer("postgres:16-alpine").start();
     // PrismaService reads DATABASE_URL via validated AppConfig at module init.
     process.env.DATABASE_URL = container.getConnectionUri();
+    // JWT_SECRET is now required by the validated env (auth-jwt). Test env is lenient (≥16 chars).
+    process.env.JWT_SECRET ??= "test-secret-at-least-16-chars";
 
     const moduleRef = await Test.createTestingModule({
       imports: [IntegrationTestModule],

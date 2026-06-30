@@ -10,11 +10,21 @@ import type { Response } from "express";
 import { ErrorCode, type ErrorResponse } from "@paypilot/shared";
 import type { RequestWithId } from "./request-id";
 
+/** Stable canonical codes for common 4xx statuses (default falls back to the exception name). */
+const STATUS_TO_ERROR_CODE: Record<number, ErrorCode> = {
+  [HttpStatus.UNAUTHORIZED]: ErrorCode.UNAUTHORIZED,
+  [HttpStatus.FORBIDDEN]: ErrorCode.FORBIDDEN,
+  [HttpStatus.NOT_FOUND]: ErrorCode.NOT_FOUND,
+  [HttpStatus.CONFLICT]: ErrorCode.CONFLICT,
+  [HttpStatus.TOO_MANY_REQUESTS]: ErrorCode.TOO_MANY_REQUESTS,
+};
+
 /**
  * Global exception filter that converts every error into the canonical
  * {@link ErrorResponse}. Validation failures (400) map to VALIDATION_ERROR with
  * field details; unhandled/5xx errors map to INTERNAL_ERROR with a generic,
- * secret-free message (full detail is logged server-side).
+ * secret-free message (full detail is logged server-side). Other 4xx statuses
+ * map to stable {@link ErrorCode} values (see STATUS_TO_ERROR_CODE).
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -41,7 +51,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
         code = ErrorCode.INTERNAL_ERROR;
       } else {
-        code = exception.name;
+        code = STATUS_TO_ERROR_CODE[status] ?? exception.name;
       }
 
       // Never leak internal detail on 5xx — keep the generic message.

@@ -16,3 +16,18 @@ datasource db {
   // Prisma 7: the connection URL lives in prisma.config.ts (Migrate/CLI) and is
   // supplied at runtime via the @prisma/adapter-pg driver adapter (PrismaService).
 }
+
+// First model (auth-jwt). Email is stored normalized (trim+lowercase); the
+// unique index is the race-safe source of truth for duplicate registration.
+// `isActive` supports disabled-user rejection. Timestamps are UTC per
+// docs/conventions.md.
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("users")
+}

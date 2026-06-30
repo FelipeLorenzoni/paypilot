@@ -64,6 +64,27 @@ fails fast and reports the offending variable name — never its value). See
 Real `.env` files are git-ignored; only `.env.example` (names + non-secret
 defaults) is committed.
 
+### Auth (JWT)
+
+| Variable         | Default  | Notes                                                                                                                                                         |
+| ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`     | _(none)_ | **Required.** ≥256 bits of entropy (base64/base64url). Generate: `openssl rand -base64 48`. Weak/placeholder values are rejected at startup in non-test envs. |
+| `JWT_ACCESS_TTL` | `15m`    | Access-token lifetime; must be between `5m` and `1h`.                                                                                                         |
+
+Rate limits (per client IP; windows parsed by `ms`; the in-memory limiter is
+**non-production-grade** — a shared store is a future deployment concern):
+
+| Variable                                         | Default      | Purpose                      |
+| ------------------------------------------------ | ------------ | ---------------------------- |
+| `AUTH_LOGIN_RATE_LIMIT_POINTS` / `..._WINDOW`    | `5` / `1m`   | Login attempts per IP        |
+| `AUTH_REGISTER_RATE_LIMIT_POINTS` / `..._WINDOW` | `3` / `1m`   | Registration attempts per IP |
+| `AUTH_DEFAULT_RATE_LIMIT_POINTS` / `..._WINDOW`  | `100` / `1m` | App-wide default per IP      |
+
+**Auth endpoints:** `POST /api/v1/auth/register` (public), `POST /api/v1/auth/login`
+(public), `GET /api/v1/auth/me` (requires `Authorization: Bearer <token>`).
+For local development the defaults in `.env.example` work out of the box (set a
+real `JWT_SECRET`).
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

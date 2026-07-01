@@ -7,7 +7,7 @@
 
 ## 1. Schema, CARD source, link columns, and CHECK rewrite
 
-- [ ] 1.1 `CreditCard` + `CardPurchase` models, `CARD` enum, `Transaction` card columns, source-aware CHECK
+- [x] 1.1 `CreditCard` + `CardPurchase` models, `CARD` enum, `Transaction` card columns, source-aware CHECK
 
   **Goal**
   Persist cards and purchase plans, extend the ledger with card links, and give idempotency + valid link states a DB-level guarantee.
@@ -39,7 +39,7 @@
 
 ## 2. DTOs, validation, and mappers
 
-- [ ] 2.1 (P) Credit-card + purchase + invoice-cycle DTOs
+- [x] 2.1 (P) Credit-card + purchase + invoice-cycle DTOs
 
   **Goal**
   Validate request shape at the API boundary.
@@ -66,7 +66,7 @@
 
   _Requirements: 1.3, 1.4, 5.3, 5.5, 5.6, 8.5, 11.2, 11.3, 11.4_
 
-- [ ] 2.2 (P) Card response mappers
+- [x] 2.2 (P) Card response mappers
 
   **Goal**
   Single tested boundary between rows and API shapes.
@@ -77,6 +77,7 @@
 
   **Implementation notes**
   - Raw `bigint` never serialized; money via the shared guarded helper. Dates via the date-only helper (no tz shift).
+  - **`dueDate` is derived directly from the row's `transactionDate`** (the design stores a CARD `transactionDate` = the invoice cycle due date). The mapper does **not** recompute `dueDate` from closing/due-day context — it has no card context and must not re-run assignment. (`InvoicesService`, which does hold the card, computes the invoice's due date independently.)
 
   **Acceptance criteria**
   - bigint↔number round-trips and rejects unsafe ints; dates round-trip with no tz shift.
@@ -93,7 +94,7 @@
 
 ## 3. Pure domain: invoice assignment & installments
 
-- [ ] 3.1 (P) Invoice-assignment domain (R4)
+- [x] 3.1 (P) Invoice-assignment domain (R4)
 
   **Goal**
   Deterministic, timezone-independent invoice-cycle + due-date computation.
@@ -117,7 +118,7 @@
 
   _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 11.5_
 
-- [ ] 3.2 (P) Installments domain (R5)
+- [x] 3.2 (P) Installments domain (R5)
 
   **Goal**
   Deterministic, sum-preserving installment split + consecutive cycle schedule.
@@ -145,7 +146,7 @@
 
 ## 4. Repository & card CRUD service
 
-- [ ] 4.1 CreditCardsRepository (owner-scoped)
+- [x] 4.1 CreditCardsRepository (owner-scoped)
 
   **Goal**
   Owner-scoped Prisma access enforcing isolation in the query.
@@ -167,7 +168,7 @@
 
   _Requirements: 2.1, 2.3, 3.1, 4.1, 10.1, 10.2_
 
-- [ ] 4.2 CreditCardsService (CRUD + deactivate-on-delete)
+- [x] 4.2 CreditCardsService (CRUD + deactivate-on-delete)
 
   **Goal**
   Orchestrate validation, money mapping, ownership, and deactivate semantics.
@@ -195,7 +196,7 @@
 
 ## 5. Purchase recording (idempotent + atomic)
 
-- [ ] 5.1 CardLedgerWriter (atomic plan + N CARD rows)
+- [x] 5.1 CardLedgerWriter (atomic plan + N CARD rows)
 
   **Goal**
   Persist a purchase plan and all its installment ledger rows atomically.
@@ -209,6 +210,7 @@
 
   **Acceptance criteria**
   - On success, 1 plan + N rows with correct seq/total/cycle/date; on a forced mid-write failure, 0 rows persisted.
+  - The forced-failure test triggers the error **inside the transaction in a test-safe way** (e.g. injecting a stub/spy that throws mid-write at the writer/service boundary, or a deliberately invalid row that the DB rejects) — **no** production-only test hooks, public test routes, or runtime flags.
 
   **Verification**
   - `pnpm --filter @paypilot/api test`; end-to-end atomicity in 8.1.
@@ -218,7 +220,7 @@
 
   _Requirements: 5.1, 5.2, 5.7, 7.6, 7.7, 10.3_
 
-- [ ] 5.2 PurchasesService (assign, split, idempotent creation + reconciliation)
+- [x] 5.2 PurchasesService (assign, split, idempotent creation + reconciliation)
 
   **Goal**
   Record a purchase idempotently, producing the correct invoice-assigned installment schedule.
@@ -245,7 +247,7 @@
 
 ## 6. Invoice view (derived)
 
-- [ ] 6.1 InvoicesService (derived per-cycle invoice)
+- [x] 6.1 InvoicesService (derived per-cycle invoice)
 
   **Goal**
   Compute a card's invoice for a cycle from the ledger, without a stored entity.
@@ -271,7 +273,7 @@
 
 ## 7. Controllers & module wiring
 
-- [ ] 7.1 Controllers + CardsModule
+- [x] 7.1 Controllers + CardsModule
 
   **Goal**
   Expose the card, purchase, and invoice endpoints, protected by the global guard; wire the module.
@@ -300,7 +302,7 @@
 
 ## 8. Integration & final gate
 
-- [ ] 8.1 Cards + purchases + invoices integration suite (Testcontainers)
+- [x] 8.1 Cards + purchases + invoices integration suite (Testcontainers)
 
   **Goal**
   Prove card CRUD, isolation, R4 assignment, R5 installments, idempotency, atomicity, and invoice views against real PostgreSQL.
@@ -313,7 +315,7 @@
   - **DELETE = deactivate**: 204, `isActive=false`; previously generated card transactions still exist.
   - **Purchase / R4+R5**: single → 1 `CARD` row on the right cycle/date; N installments → N rows across consecutive cycles, correct seq/total, sum = total, snapshot fields, owner = card user; the 3 worked assignment examples; `installments > 24`/`< 1` → 400; inactive card → 400.
   - **Idempotency / R13**: same `idempotencyKey` + same payload twice → one plan + N rows, second returns existing; concurrent `Promise.all` → exactly one plan; same key + divergent payload or different card → **409**.
-  - **Atomicity / R7**: a forced failure mid-write leaves **0** rows.
+  - **Atomicity / R7**: a forced failure mid-write leaves **0** rows (no `CardPurchase`, no `Transaction`). The failure is induced in a **test-safe way** (stub/spy throwing inside the transaction, or a DB-rejected row) — **never** via production-only hooks, public test routes, or runtime flags.
   - **Invoice view / R8**: total = exact sum; due date computed; empty cycle → zero total; malformed cycle → 400; cross-user/unknown card → 404; deactivated card still returns invoices.
   - **tz safety**: installment `transactionDate` round-trips unchanged under `TZ=America/Sao_Paulo`.
 
@@ -325,7 +327,7 @@
 
   _Requirements: 1.1, 1.3, 2.1, 2.2, 3.1, 4.1, 4.2, 4.3, 5.1, 5.3, 5.4, 5.5, 5.7, 6.1, 6.2, 6.5, 6.7, 7.1, 7.2, 7.5, 7.6, 7.7, 8.1, 8.3, 8.4, 8.5, 10.1, 10.3, 10.4, 11.5, 12.4, 13.1, 13.2, 13.4_
 
-- [ ] 8.2 Source-protection + CHECK-constraint integration assertions
+- [x] 8.2 Source-protection + CHECK-constraint integration assertions
 
   **Goal**
   Prove three-source ledger protection (R9) and reject invalid link states at the DB.
@@ -345,7 +347,7 @@
 
   _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 12.2_
 
-- [ ] 8.3 README + final quality gate
+- [x] 8.3 README + final quality gate
 
   **Goal**
   Document the credit-card endpoints and confirm the monorepo gate is green.

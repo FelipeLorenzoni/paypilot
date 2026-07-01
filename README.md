@@ -133,6 +133,37 @@ endpoints only ever touch `source = MANUAL` rows.
 2026-03` (omit the period to use the current UTC month). There is no public
   HTTP generation endpoint.
 
+### Credit cards & invoices
+
+Credit cards, card purchases (single and installment), and derived monthly
+invoices (all routes require `Authorization: Bearer <token>`; owner-scoped):
+
+- `POST /api/v1/credit-cards` — create (201); `label`, `closingDay`/`dueDay`
+  (1–31), optional `creditLimitMinor` (non-negative minor units; no
+  available-limit enforcement in this spec)
+- `GET /api/v1/credit-cards` — list (paginated; optional `active=true|false`)
+- `GET /api/v1/credit-cards/:id` · `PATCH /api/v1/credit-cards/:id`
+- `DELETE /api/v1/credit-cards/:id` — **deactivate** (`isActive=false`), 204;
+  never hard-deletes and preserves generated transactions
+- `POST /api/v1/credit-cards/:cardId/purchases` — record a purchase (201).
+  Requires an `idempotencyKey`; `installments` is `1..24`
+- `GET /api/v1/credit-cards/:cardId/invoices/:cycle` — the invoice for a
+  `YYYY-MM` cycle (transactions + exact total + due date)
+
+Card transactions use `source = CARD`; this spec does **not** support editing or
+deleting them after creation (refund/chargeback/adjustment are future specs).
+
+- **Invoice assignment (R4):** a purchase on or before the card's closing day
+  lands on the current cycle; after it, the next cycle. `invoiceCycle` is the
+  **closing month** (`YYYY-MM`); the due date is derived from the due day and may
+  roll to the following month. Short months and year rollover are handled.
+- **Installments (R5):** `N` installments over `N` consecutive cycles; amounts
+  sum exactly to the total (residual cents on the first installment).
+- **Idempotency (R13):** purchase creation is idempotent per
+  `(user, idempotencyKey)` and atomic (all `N` rows or none). A retry with the
+  same payload returns the existing purchase; the same key with a divergent
+  payload or a different card returns **409**.
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

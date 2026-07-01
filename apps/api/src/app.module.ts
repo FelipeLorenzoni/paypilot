@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./auth/auth.module";
 import { JwtAuthGuard } from "./auth/jwt-auth.guard";
+import { CardsModule } from "./cards/cards.module";
 import { ClockModule } from "./common/clock.module";
 import { APP_CONFIG, type AppConfig } from "./config/app-config";
 import { AppConfigModule } from "./config/config.module";
@@ -37,6 +38,7 @@ import { RecurringBillsModule } from "./recurring-bills/recurring-bills.module";
     AuthModule,
     ExpensesModule,
     RecurringBillsModule,
+    CardsModule,
     HealthModule,
   ],
   providers: [

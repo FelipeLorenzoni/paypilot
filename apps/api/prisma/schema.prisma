@@ -31,6 +31,8 @@ model User {
 
   transactions   Transaction[]
   recurringBills RecurringBill[]
+  creditCards    CreditCard[]
+  cardPurchases  CardPurchase[]
 
   @@map("users")
 }
@@ -47,6 +49,7 @@ enum TransactionType {
 enum TransactionSource {
   MANUAL
   RECURRING
+  CARD
 }
 
 model Transaction {
@@ -68,11 +71,24 @@ model Transaction {
   recurringBillId String?           @db.Uuid
   recurringBill   RecurringBill?    @relation(fields: [recurringBillId], references: [id], onDelete: Restrict)
   periodKey       String?           @db.Char(7) // "YYYY-MM"
+  // Credit-card link (credit-cards-invoices). NULL for non-CARD rows; all set
+  // for CARD rows. `invoiceCycle` is the closing month "YYYY-MM"; `transactionDate`
+  // for a CARD row is the cycle's due date. The source-aware CHECK constraint
+  // (added in the migration) enforces the valid per-source link states, incl.
+  // the installment invariants (1 <= seq <= total).
+  creditCardId     String?          @db.Uuid
+  creditCard       CreditCard?      @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  cardPurchaseId   String?          @db.Uuid
+  cardPurchase     CardPurchase?    @relation(fields: [cardPurchaseId], references: [id], onDelete: Restrict)
+  invoiceCycle     String?          @db.Char(7) // "YYYY-MM" (closing month)
+  installmentSeq   Int?             @db.SmallInt
+  installmentTotal Int?             @db.SmallInt
   createdAt       DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
 
   @@unique([recurringBillId, periodKey])
   @@index([userId, transactionDate, id])
+  @@index([creditCardId, invoiceCycle])
   @@map("transactions")
 }
 
@@ -101,4 +117,60 @@ model RecurringBill {
 
   @@index([userId])
   @@map("recurring_bills")
+}
+
+// Credit card (credit-cards-invoices). `closingDay`/`dueDay` are 1–31 (clamped
+// to month length during assignment); `creditLimitMinor` is optional BIGINT
+// minor units (available-limit checks are out of scope). `isActive` supports
+// deactivation (DELETE deactivates rather than hard-deletes, preserving
+// generated card transactions). `onDelete: Restrict` — generated rows/purchases
+// reference the card.
+model CreditCard {
+  id               String         @id @default(uuid()) @db.Uuid
+  userId           String         @db.Uuid
+  user             User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  label            String         @db.VarChar(100)
+  closingDay       Int            @db.SmallInt
+  dueDay           Int            @db.SmallInt
+  creditLimitMinor BigInt?
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(6)
+
+  purchases        CardPurchase[]
+  transactions     Transaction[]
+
+  @@index([userId])
+  @@map("credit_cards")
+}
+
+// Originating purchase / installment plan (credit-cards-invoices). One row per
+// recorded purchase; every generated CARD `Transaction` links back via
+// `cardPurchaseId`. `idempotencyKey` + `@@unique([userId, idempotencyKey])` is
+// the DB-level idempotency guarantee (R13); `requestHash` is a sha-256 of the
+// normalized full payload used to reconcile key reuse (return existing vs 409).
+// `startCycle` is the assigned first invoice cycle "YYYY-MM". `onDelete: Restrict`.
+model CardPurchase {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  user           User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creditCardId   String        @db.Uuid
+  creditCard     CreditCard    @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  idempotencyKey String        @db.VarChar(200)
+  requestHash    String        @db.Char(64)
+  purchaseDate   DateTime      @db.Date
+  amountMinor    BigInt
+  currency       String        @db.Char(3)
+  description    String        @db.VarChar(255)
+  categoryLabel  String?       @db.VarChar(100)
+  installments   Int           @db.SmallInt
+  startCycle     String        @db.Char(7) // "YYYY-MM"
+  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(6)
+
+  transactions   Transaction[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([creditCardId])
+  @@map("card_purchases")
 }

@@ -66,7 +66,7 @@ graph TB
 | Backend | NestJS 11 | controllers/services/module | reuse global guard/pipe/filter |
 | Data | Prisma 7 + PostgreSQL | `CreditCard`, `CardPurchase`, `Transaction` (CARD) | atomic `$transaction`; `@@unique` idempotency; rewritten CHECK |
 
-Assignment/installment logic is **pure over explicit inputs** (the client-provided `purchaseDate` + card days), so it reads **no server clock** — R11.5 is satisfied by construction, and unit tests need no clock. `Clock` is available for audit timestamps only; no `Date.now()` in domain logic. No new external dependencies.
+**Clock policy**: Invoice assignment, due-date computation, and installment scheduling shall be pure over explicit date inputs and shall not read the system clock directly. If current time is needed for any behavior in this spec, it shall come from the injected `Clock`. Consequently the pure `invoice-assignment`/`installments` functions receive `Clock` **only if** they actually need current time (they do not in this spec — they operate on the client-provided `purchaseDate` + card days), and unit tests need no clock. No `Date.now()` in domain logic. No new external dependencies.
 
 ## System Flows
 
@@ -151,9 +151,9 @@ interface PurchasesService {
 }
 ```
 - Loads the owned card (404 if not owned/missing; **400** if inactive). Builds `Money` via `createMoney` (each per-installment amount is validated through `createMoney`). Computes start cycle + per-installment amounts/cycles. Delegates the atomic write to `CardLedgerWriter`.
-- **Idempotency contract & reconciliation** (R13.4): `idempotencyKey` is one-per-logical-request; a retry reuses the same key with the same payload. On `P2002` the service does a fresh read (after the aborted `$transaction`) of the existing `CardPurchase` and reconciles it against a stored **request fingerprint** (`requestHash` = hash of `purchaseDate`, `amountMinor`, `currency`, `installments`):
-  - fingerprint matches **and** the stored `creditCardId` equals the path `:cardId` → return the existing purchase result (idempotent success, no new rows);
-  - divergent payload or a **different `:cardId`** under the same key → **409 `CONFLICT`** (`IDEMPOTENCY_KEY_REUSED`), never a silently-returned unrelated purchase.
+- **Idempotency contract & reconciliation** (R13.4): `idempotencyKey` is one-per-logical-request; a retry reuses the same key with the same payload. The stored **request fingerprint** (`requestHash`) is a sha-256 of the **normalized full purchase payload that affects persisted output** — `creditCardId`, `purchaseDate`, `amountMinor`, `currency`, `description`, `category`, `installments` — normalized before hashing: `currency` uppercased, `description` trimmed, `category` trimmed-or-`null`, `purchaseDate` the validated `YYYY-MM-DD`, `amountMinor`/`installments` the validated integers. (`description`, `category`, and `creditCardId` are included because they change the persisted rows.) On `P2002` the service does a fresh read (after the aborted `$transaction`) of the existing `CardPurchase` and reconciles it:
+  - same user **+** same `creditCardId` (path `:cardId`) **+** same normalized `requestHash` → return the existing purchase result (idempotent success, no new rows);
+  - same user **+** same `idempotencyKey` but a **divergent** normalized payload (or different card) → **409 `CONFLICT`** (`IDEMPOTENCY_KEY_REUSED`), never a silently-returned unrelated purchase.
 - Concurrency: the loser's insert blocks on the unique index until the winner commits, then the fresh read sees the committed row — so overlapping requests converge to exactly one plan.
 
 ### Data: CardLedgerWriter
@@ -212,7 +212,7 @@ model CardPurchase {
   creditCardId   String   @db.Uuid
   creditCard     CreditCard @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
   idempotencyKey String   @db.VarChar(200)
-  requestHash    String   @db.Char(64) // sha-256 of the core payload; reconciles key reuse (409 on mismatch)
+  requestHash    String   @db.Char(64) // sha-256 of the normalized full payload (card,date,amount,currency,description,category,installments); reconciles key reuse (409 on mismatch)
   purchaseDate   DateTime @db.Date
   amountMinor    BigInt
   currency       String   @db.Char(3)
@@ -259,7 +259,9 @@ ALTER TABLE "transactions" ADD CONSTRAINT "transactions_source_link_chk" CHECK (
                         AND "installmentSeq" IS NULL AND "installmentTotal" IS NULL)
   OR (source = 'CARD'   AND "recurringBillId" IS NULL AND "periodKey" IS NULL
                         AND "creditCardId" IS NOT NULL AND "cardPurchaseId" IS NOT NULL AND "invoiceCycle" IS NOT NULL
-                        AND "installmentSeq" IS NOT NULL AND "installmentTotal" IS NOT NULL)
+                        AND "installmentSeq" IS NOT NULL AND "installmentTotal" IS NOT NULL
+                        AND "installmentSeq" >= 1 AND "installmentTotal" >= 1
+                        AND "installmentSeq" <= "installmentTotal")
 );
 ```
 - **Migration**: create `credit_cards`, `card_purchases`; add enum value `CARD`; add card columns + FKs + `@@index` to `transactions`; swap the CHECK. Generated via `migrate diff` → hand-edit (CHECK) → `migrate deploy`, per the recurring-bills precedent.
@@ -284,7 +286,7 @@ Reuse `AllExceptionsFilter`/`ErrorCode`: 400 validation (bad body, `installments
 - **Idempotency (R13)**: same `idempotencyKey` + same payload twice → one plan + N rows, second returns existing; concurrent `Promise.all` → exactly one plan; same key with a **divergent** payload or a **different** card → **409**.
 - **Atomicity (R7)**: a forced failure mid-write leaves **0** rows (never partial).
 - **Invoice view (R8)**: total = exact sum; due date computed; empty cycle → zero total; malformed cycle → 400; cross-user/unknown card → 404; a **deactivated** card still returns its invoices (history preserved).
-- **Source protection (R9)**: manual endpoints cannot list/read/update/delete a `CARD` row; CHECK rejects each invalid link state (MANUAL/RECURRING/CARD) via raw insert; existing manual/recurring suites stay green.
+- **Source protection (R9)**: manual endpoints cannot list/read/update/delete a `CARD` row; CHECK rejects each invalid link state (MANUAL/RECURRING/CARD) via raw insert — including a `CARD` row with bad installment invariants (`installmentSeq < 1`, `installmentTotal < 1`, or `installmentSeq > installmentTotal`); existing manual/recurring suites stay green.
 - **tz safety**: installment `transactionDate` round-trips unchanged under `TZ=America/Sao_Paulo`.
 
 ## Security Considerations
@@ -293,7 +295,7 @@ Per-user isolation via token-derived `userId` + owner-scoped queries; generated 
 ## Resolved Decisions
 - Source value **`CARD`**; `type` stays `EXPENSE`.
 - Purchase/plan = **`CardPurchase`** aggregate; ledger rows link via `cardPurchaseId` + self-describing columns.
-- Idempotency: required `idempotencyKey` + `@@unique([userId, idempotencyKey])` + stored `requestHash`; **atomic** `$transaction`; matching retry → existing result, divergent payload / different card under the same key → **409**.
+- Idempotency: required `idempotencyKey` + `@@unique([userId, idempotencyKey])` + stored `requestHash` (sha-256 of the **normalized full payload**: card, date, amount, currency, description, category, installments); **atomic** `$transaction`; matching retry → existing result, divergent normalized payload / different card under the same key → **409**.
 - Assignment/installment domain is **pure over explicit inputs** — no server clock read (R11.5 by construction).
 - `invoiceCycle` = **closing month**; due date derived (may roll to next month); documented examples.
 - Installment `transactionDate` = **cycle due date** (date-only, tz-safe).

@@ -86,7 +86,7 @@ sequenceDiagram
 |-----------|--------------|--------|-----|-----------|
 | ImportsController | transport | `POST /api/v1/imports` (multipart); `GET /api/v1/imports/:id` | 1,4,8 | API |
 | ImportsService | application | orchestrate parse→validate→dedup→persist, build summary; fetch a run | 1–5,8 | Service |
-| CsvParser | infra | parse buffer via `csv-parse/sync`; structural check | 4,9 | Service |
+| CsvParser | infra | parse buffer via `csv-parse/sync`; delimiter detection (`,`/`;`); structural check | 4,9 | Service |
 | RowValidator | domain (pure) | validate a raw row → candidate or invalid(reasonCode) | 3,9 | Service |
 | dedup-key | domain (pure) | normalize + `dedupHash` | 2 | Service |
 | ImportLedgerWriter | data | atomic ImportRun + `createMany skipDuplicates` | 1,2,7,8 | Batch/State |
@@ -144,7 +144,11 @@ interface ImportsService {
 
 ### ImportRun (new)
 ```
-enum ImportStatus { PROCESSING  COMPLETED  FAILED }
+enum ImportStatus { PROCESSING  COMPLETED }
+// FAILED is intentionally absent in the MVP: structural failures persist
+// nothing (no run), and the atomic run+rows transaction means an observer only
+// ever sees COMPLETED (PROCESSING is transient inside the transaction). A
+// FAILED status arrives with a future async-import spec, if any.
 
 model ImportRun {
   id             String       @id @default(uuid()) @db.Uuid
@@ -189,12 +193,14 @@ Drop `transactions_source_link_chk`, add a version where each source sets exactl
 2. Create `ImportStatus` enum + `import_runs`; add `dedupHash`/`importRunId` (+ FK, index) to `transactions`; **drop+add** the source-aware CHECK; add the partial unique index. (Generated via `migrate diff` → hand-edit CHECK/partial-index → `migrate deploy`.)
 
 ### CSV schema (fixed, MVP)
-Required columns **date, amount, description**; optional **category, currency**. Design fixes: header names (accepted set), delimiter (`,`), encoding (UTF-8), date format (`YYYY-MM-DD`), blank-line handling (skip). Structurally invalid header → 400 (persist nothing).
+Required columns **date, amount, description**; optional **category, currency**. Design fixes: header names (accepted set), encoding (UTF-8), date format (`YYYY-MM-DD`), blank-line handling (skip). Structurally invalid header → 400 (persist nothing).
+
+**Delimiter:** both **`,`** and **`;`** are supported (BR bank exports commonly use `;` precisely because of decimal commas). Detection is deterministic from the **header line**: if it contains `;` the delimiter is `;`, otherwise `,` (header names never contain either character). **Interplay with BR amounts:** under the `;` delimiter, `1.234,56` may appear unquoted; under the `,` delimiter, an amount containing a comma MUST be RFC-4180 **quoted** (`"1.234,56"`) — an unquoted comma splits the row and fails structural/row validation. Both behaviors are documented and tested.
 
 **Amount format:** accept both **dot-decimal** (`1234.56`) and **Brazilian** (`1.234,56` — dot thousands separator, comma decimal); normalize to integer minor units (2 decimal places for BRL) deterministically. A currency symbol/whitespace is trimmed. A value that matches neither accepted form, has more than 2 decimals, or is non-positive is rejected as invalid with a specific `reasonCode` (`INVALID_AMOUNT_FORMAT` for unparseable/format, `NON_POSITIVE_AMOUNT` for zero/negative), then the parsed integer is validated via `createMoney`.
 
 ### Constants
-`MAX_FILE_BYTES` and `MAX_ROWS` (config/constants); money as integer minor units; dates date-only `@db.Date`; audit timestamps `@db.Timestamptz(6)`.
+`MAX_FILE_BYTES = 1_048_576` (1 MiB) and `MAX_ROWS = 5000` — hard-coded, documented constants for the MVP (a monthly statement is typically a few hundred rows; 1 MiB comfortably bounds 5k rows). Revisit as validated config in a later spec if needed. Money as integer minor units; dates date-only `@db.Date`; audit timestamps `@db.Timestamptz(6)`.
 
 ## Error Handling
 Reuse `AllExceptionsFilter`/`ErrorCode`: **400** (invalid header/structure, all-rows-invalid is still 201 with counts, malformed request), **401** (unauthenticated), **413** (file too large). Structural/size failures persist nothing. Row-level failures never abort the import (reported in `invalidRows`). A DB unique conflict is a skipped duplicate (not an error). Never log the raw body/rows — only operation, userId, requestId, counts, error codes.
@@ -227,3 +233,6 @@ Untrusted upload: memory storage + `limits.fileSize` + max row count; whole-file
 - **CHECK rewritten** for four sources; **two-step migration** for the new enum value.
 - **Guaranteed counts are DB-derived** (`importedCount` = insert count); `duplicateRows` is best-effort/informational.
 - **Amount format:** dot-decimal and Brazilian `1.234,56` accepted; stable `reasonCode`s for row rejections.
+- **Delimiter:** `,` and `;` supported, detected from the header line; under `,`, comma-bearing BR amounts must be RFC-4180 quoted.
+- **Limits:** `MAX_FILE_BYTES = 1 MiB`, `MAX_ROWS = 5000` (hard-coded MVP constants).
+- **`ImportStatus { PROCESSING, COMPLETED }`** — no `FAILED` in the MVP (nothing can persist a failed run under the atomic flow).

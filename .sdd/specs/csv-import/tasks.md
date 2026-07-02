@@ -40,7 +40,7 @@
 
   **Deliverables**
   - `schema.prisma`:
-    - `enum ImportStatus { PROCESSING COMPLETED FAILED }` and `model ImportRun` (`id @db.Uuid`, `userId` FK → User `onDelete: Restrict`, `status @default(PROCESSING)`, `totalRows`/`importedCount`/`duplicateCount`/`invalidCount Int @default(0)`, `fileHash @db.Char(64)?`, timestamps, `@@index([userId])`, `@@map("import_runs")`).
+    - `enum ImportStatus { PROCESSING COMPLETED }` — **no `FAILED` in the MVP**: structural failures persist nothing and the atomic run+rows transaction means an observer only ever sees `COMPLETED` (`PROCESSING` is transient inside the transaction; a `FAILED` status arrives with a future async-import spec). `model ImportRun` (`id @db.Uuid`, `userId` FK → User `onDelete: Restrict`, `status @default(PROCESSING)`, `totalRows`/`importedCount`/`duplicateCount`/`invalidCount Int @default(0)`, `fileHash @db.Char(64)?`, timestamps, `@@index([userId])`, `@@map("import_runs")`).
     - `enum TransactionSource` += `IMPORTED`.
     - `Transaction` += `dedupHash @db.Char(64)?`, `importRunId @db.Uuid?` (FK → ImportRun, Restrict). Inverse relations on `User`/`ImportRun`.
   - **Two migrations** (see research — avoids "unsafe use of new enum value" in the partial-index predicate):
@@ -60,7 +60,7 @@
   **Out of scope**
   - Service/domain logic.
 
-  _Requirements: 2.4, 2.5, 6.1, 7.3, 8.1, 8.2_
+  _Requirements: 2.4, 2.5, 6.1, 7.3, 8.1, 8.2, 8.4_
 
 ---
 
@@ -124,14 +124,15 @@
   Safely parse the untrusted buffer and enforce the fixed MVP schema.
 
   **Deliverables**
-  - A wrapper over `csv-parse/sync`: UTF-8, `,` delimiter, header row required; validates the header against the accepted names (required: date, amount, description; optional: category, currency); skips blank lines; returns `{ header, rows: Array<{ record, lineNumber }> }` or a structural error.
-  - Unit tests (quoted fields, embedded delimiters/quotes, blank lines, bad header, empty file).
+  - A wrapper over `csv-parse/sync`: UTF-8, header row required; **delimiter detection** — deterministic from the header line: contains `;` → `;`, otherwise `,` (header names never contain either); validates the header against the accepted names (required: date, amount, description; optional: category, currency); skips blank lines; returns `{ header, delimiter, rows: Array<{ record, lineNumber }> }` or a structural error.
+  - Unit tests (quoted fields, embedded delimiters/quotes, blank lines, bad header, empty file, both delimiters).
 
   **Implementation notes**
+  - **BR amounts vs delimiter:** under `;`, `1.234,56` may appear unquoted; under `,`, a comma-bearing amount MUST be RFC-4180 quoted (`"1.234,56"`) — an unquoted comma splits the row (structural/row failure), documented behavior.
   - Structural failure (missing/unknown required header, unparseable file) → typed error the service maps to **400** with nothing persisted. Row count is checked by the service against `MAX_ROWS` after parse; `csv-parse` options bound record size.
 
   **Acceptance criteria**
-  - Valid file → rows with correct `lineNumber`s (header = line 1); RFC-4180 quoting handled; bad header/undecodable file → structural error (no partial results).
+  - Valid file → rows with correct `lineNumber`s (header = line 1); RFC-4180 quoting handled; **semicolon-delimited file with unquoted `1.234,56` parses**; **comma-delimited file with quoted `"1.234,56"` parses**; bad header/undecodable file → structural error (no partial results).
 
   **Verification**
   - `pnpm --filter @paypilot/api test`.
@@ -185,7 +186,7 @@
   - Optional `fileHash` = sha-256 of the file bytes stored on the run. Unit tests.
 
   **Implementation notes**
-  - Never log the raw body/rows — only operation, userId, requestId, counts, error codes. Summary exposes no cross-user/cross-source data. Constants `MAX_FILE_BYTES`, `MAX_ROWS` in a documented constants module (MVP hard-coded).
+  - Never log the raw body/rows — only operation, userId, requestId, counts, error codes. Summary exposes no cross-user/cross-source data. Constants in a documented module, hard-coded for the MVP: **`MAX_FILE_BYTES = 1_048_576` (1 MiB)** and **`MAX_ROWS = 5000`**.
 
   **Acceptance criteria**
   - Oversized/too-many-rows/bad-header → whole-file error, zero rows + zero runs persisted; mixed file → valid imported, invalids reported with codes, duplicates skipped; counts consistent (`totalRows = imported + duplicate + invalid`); `getRun` owner-scoped 404 semantics.
@@ -240,7 +241,8 @@
   **Acceptance criteria** (all pass; suite exits non-zero on failure)
   - **Happy path**: N valid rows → N `IMPORTED`/`EXPENSE` rows owned by the user; `ImportRun` persisted with matching counts; summary counts DB-derived and self-consistent.
   - **Dedup / R6**: existing-match skipped; in-file duplicate skipped (first wins); **re-import of the same file → zero new rows**; near-miss (one differing field) inserted; **overlapping/concurrent imports** of the same file converge to no duplicate `(userId, dedupHash)`.
-  - **Partial success**: mixed file → valid rows imported, invalid rows reported with `lineNumber` + `reasonCode` (incl. BR `1.234,56` accepted, `NON_POSITIVE_AMOUNT`, `INVALID_DATE`); import not aborted.
+  - **Partial success**: mixed file → valid rows imported, invalid rows reported with `lineNumber` + `reasonCode` (incl. `NON_POSITIVE_AMOUNT`, `INVALID_DATE`); import not aborted.
+  - **Delimiters/BR amounts**: a **semicolon-delimited** file with unquoted `1.234,56` imports correctly; a **comma-delimited** file with quoted `"1.234,56"` imports correctly.
   - **Whole-file**: bad header → 400 and **nothing persisted** (no run, no rows); oversized file → 413; too many rows → 400 — nothing persisted in each case.
   - **Provenance**: `GET /api/v1/imports/:id` returns the owner's run; cross-user/unknown → 404.
   - **Isolation**: user B's identical rows import fine (dedup is per-user); user B cannot read user A's run.

@@ -94,13 +94,14 @@ Requirements describe **what** must hold; the exact dedup-key normalization (tri
 2. The record shall store at least `createdAt`, a `status`, the imported count, the duplicate count, and the invalid count, and optionally a file hash (e.g. sha-256 of the file bytes); it shall associate the owning user via a foreign key.
 3. The record shall **not** store or log the raw CSV body unless explicitly justified in design.
 4. The design shall define whether imported transactions reference their import-run record (provenance link) and how a structurally rejected file (Requirement 4.1) is represented, if at all.
+5. When an authenticated user fetches an import-run they own, the system shall return that run (id, status, counts, createdAt); a run owned by another user or an unknown id shall respond with 404 without disclosure.
 
 ### Requirement 9: CSV Schema and Parser
 **Objective:** As the system, I want a well-defined CSV contract and a safe parser, so that imports are predictable and untrusted files are handled robustly.
 
 #### Acceptance Criteria
 1. The minimum CSV schema shall require the columns **date, amount, description**, and shall optionally accept **category** and **currency**.
-2. The design shall define the accepted header names, delimiter, encoding, accepted date formats, accepted decimal/amount formats, and blank-line handling.
+2. The design shall define the accepted header names, delimiter, encoding, accepted date formats, accepted decimal/amount formats (including whether Brazilian-style `1.234,56` is accepted), and blank-line handling; a row whose amount does not match an accepted format shall be rejected as invalid with a specific `reasonCode` (e.g. `INVALID_AMOUNT_FORMAT`).
 3. The design shall evaluate using a small, vetted RFC-4180 CSV parser (such as `csv-parse`), pinned to an **exact** version and compliant with the repo supply-chain policy; a hand-rolled parser shall be avoided unless explicitly justified in design.
 4. Amount strings shall be parsed to integer minor units deterministically (documented decimal handling) and validated via the shared `createMoney`.
 

@@ -84,13 +84,13 @@ sequenceDiagram
 
 | Component | Domain/Layer | Intent | Req | Contracts |
 |-----------|--------------|--------|-----|-----------|
-| ImportsController | transport | `POST /api/v1/imports` (multipart) | 1,4 | API |
-| ImportsService | application | orchestrate parse→validate→dedup→persist, build summary | 1–5 | Service |
+| ImportsController | transport | `POST /api/v1/imports` (multipart); `GET /api/v1/imports/:id` | 1,4,8 | API |
+| ImportsService | application | orchestrate parse→validate→dedup→persist, build summary; fetch a run | 1–5,8 | Service |
 | CsvParser | infra | parse buffer via `csv-parse/sync`; structural check | 4,9 | Service |
 | RowValidator | domain (pure) | validate a raw row → candidate or invalid(reasonCode) | 3,9 | Service |
 | dedup-key | domain (pure) | normalize + `dedupHash` | 2 | Service |
 | ImportLedgerWriter | data | atomic ImportRun + `createMany skipDuplicates` | 1,2,7,8 | Batch/State |
-| ImportsRepository | data | owner-scoped existing-hash lookup + run reads | 2,5,8 | State |
+| ImportsRepository | data | owner-scoped existing-hash lookup + run reads (`findOwnedRun`) | 2,5,8 | State |
 
 ### Domain: dedup-key (pure)
 ```typescript
@@ -108,7 +108,7 @@ type RowResult =
   | { ok: false; reasonCode: string };
 interface RowValidator { validate(raw: Record<string, string>, lineNumber: number): RowResult; }
 ```
-- Rejects: unparseable/invalid calendar date; non-positive or non-integer amount; unsupported currency (BRL only); missing required field; over-long field. Amount string → minor units (documented decimal parse), then `createMoney`.
+- Rejects with a stable `reasonCode`: `INVALID_DATE` (unparseable/invalid calendar date), `INVALID_AMOUNT_FORMAT` (unparseable/too many decimals), `NON_POSITIVE_AMOUNT` (zero/negative), `UNSUPPORTED_CURRENCY` (non-BRL), `MISSING_FIELD`, `FIELD_TOO_LONG`. Amount string → minor units (documented decimal parse: dot-decimal or BR `1.234,56`), then `createMoney`.
 
 ### Application: ImportsService
 ```typescript
@@ -121,9 +121,15 @@ interface ImportSummary {
   duplicateRows?: Array<{ lineNumber: number }>;
   importRunId: string;
 }
-interface ImportsService { import(userId: string, file: UploadedFile): Promise<ImportSummary>; }
+interface ImportRunView { id: string; status: string; totalRows: number; importedCount: number; duplicateCount: number; invalidCount: number; createdAt: string; }
+interface ImportsService {
+  import(userId: string, file: UploadedFile): Promise<ImportSummary>;
+  getRun(userId: string, id: string): Promise<ImportRunView>; // owner-scoped; 404 if not owned/unknown
+}
 ```
-- Enforce size/row limits (whole-file reject → 400/413, persist nothing). Parse (bad header/structure → 400). Validate rows (collect invalids). Compute `dedupHash`; app-level dedup vs the user's existing `IMPORTED` hashes + in-file (first wins) for `duplicateRows`. Delegate persistence to the writer; `importedCount` comes from the DB. `duplicateCount = validRows - importedCount`.
+- Enforce size/row limits (whole-file reject → 400/413, persist nothing). Parse (bad header/structure → 400). Validate rows (collect invalids). Compute `dedupHash`; app-level dedup vs the user's existing `IMPORTED` hashes + in-file (first wins) for `duplicateRows`. Delegate persistence to the writer.
+- **Guaranteed counts are DB-derived:** `importedCount` = the `createMany({ skipDuplicates })` insert count (the source of truth under concurrency), `duplicateCount = validRows − importedCount`, `invalidCount` = validation rejections, `totalRows = validRows + invalidCount`. `duplicateRows` (lineNumbers) is **best-effort** from the app-level pre-pass and may under-report rows the DB skipped due to a concurrent import; it is informational only and never contradicts the guaranteed counts.
+- `getRun` returns the owner-scoped run (404 if not owned/unknown), exposing only its own counts (no cross-user/cross-source data).
 
 ### Data: ImportLedgerWriter
 - **Batch/State**: in one `prisma.$transaction` — create `ImportRun` (status `processing`), `createMany({ data: survivors, skipDuplicates: true })` (each row `source=IMPORTED`, `type=EXPENSE`, `importRunId`, `dedupHash`, owner=userId), then update the run with final counts + status `completed`. `skipDuplicates` → `ON CONFLICT DO NOTHING` (partial unique), so an overlapping import is skipped, never fatal. All-or-none on unexpected failure.
@@ -132,6 +138,7 @@ interface ImportsService { import(userId: string, file: UploadedFile): Promise<I
 | Method | Endpoint | Request | Response | Errors |
 |--------|----------|---------|----------|--------|
 | POST | /api/v1/imports | multipart `file` (CSV) | 201 `ImportSummary` | 400 (structure/validation), 401, 413 (size) |
+| GET | /api/v1/imports/:id | path `id` (uuid) | 200 `ImportRunView` (id, status, counts, createdAt) | 401, 404 (not owned/unknown) |
 
 ## Data Models
 
@@ -182,7 +189,9 @@ Drop `transactions_source_link_chk`, add a version where each source sets exactl
 2. Create `ImportStatus` enum + `import_runs`; add `dedupHash`/`importRunId` (+ FK, index) to `transactions`; **drop+add** the source-aware CHECK; add the partial unique index. (Generated via `migrate diff` → hand-edit CHECK/partial-index → `migrate deploy`.)
 
 ### CSV schema (fixed, MVP)
-Required columns **date, amount, description**; optional **category, currency**. Design fixes: header names (accepted set), delimiter (`,`), encoding (UTF-8), date formats (e.g. `YYYY-MM-DD`), decimal format (dot decimal, 2 places → minor units), blank-line handling (skip). Structurally invalid header → 400 (persist nothing).
+Required columns **date, amount, description**; optional **category, currency**. Design fixes: header names (accepted set), delimiter (`,`), encoding (UTF-8), date format (`YYYY-MM-DD`), blank-line handling (skip). Structurally invalid header → 400 (persist nothing).
+
+**Amount format:** accept both **dot-decimal** (`1234.56`) and **Brazilian** (`1.234,56` — dot thousands separator, comma decimal); normalize to integer minor units (2 decimal places for BRL) deterministically. A currency symbol/whitespace is trimmed. A value that matches neither accepted form, has more than 2 decimals, or is non-positive is rejected as invalid with a specific `reasonCode` (`INVALID_AMOUNT_FORMAT` for unparseable/format, `NON_POSITIVE_AMOUNT` for zero/negative), then the parsed integer is validated via `createMoney`.
 
 ### Constants
 `MAX_FILE_BYTES` and `MAX_ROWS` (config/constants); money as integer minor units; dates date-only `@db.Date`; audit timestamps `@db.Timestamptz(6)`.
@@ -194,11 +203,12 @@ Reuse `AllExceptionsFilter`/`ErrorCode`: **400** (invalid header/structure, all-
 
 ### Unit (pure — no DB/HTTP)
 - `dedup-key`: description normalization (trim/whitespace/case); identical hash for equivalent rows; different hash on a one-field near-miss.
-- `RowValidator`: valid row → candidate; rejects bad date, non-positive/non-integer amount, non-BRL, missing/over-long field; amount decimal → minor units.
+- `RowValidator`: valid row → candidate; rejects bad date, non-positive amount, non-BRL, missing/over-long field with the right `reasonCode`; amount decimal (dot and BR `1.234,56`) → minor units.
 - `CsvParser`: parses quoted fields/delimiters; rejects a bad header (structural).
 
 ### Integration (Testcontainers, real PostgreSQL — serial, non-UTC TZ)
-- Happy path: N valid rows → N `IMPORTED`/`EXPENSE` rows owned by the user + `ImportRun` with matching counts; installment-free.
+- Happy path: N valid rows → N `IMPORTED`/`EXPENSE` rows owned by the user + `ImportRun` with matching counts; the summary's `importedCount`/`duplicateCount` are DB-derived (equal the actual inserted rows).
+- Run retrieval: `GET /api/v1/imports/:id` returns the owner's run (counts/status); another user's or an unknown id → 404.
 - **Dedup / R6:** existing-match skip; in-file duplicate skip; **re-import same file → zero new rows** (DB truth); near-miss (one differing field) inserted; overlapping imports converge (no duplicate `(userId, dedupHash)`).
 - Validation/partial success: invalid rows reported with `lineNumber`+`reasonCode`, valid rows imported.
 - Whole-file: bad header → 400 persist nothing; oversized/too-many-rows → 413/400 persist nothing.
@@ -213,5 +223,7 @@ Untrusted upload: memory storage + `limits.fileSize` + max row count; whole-file
 - Source **`IMPORTED`**; `type` stays `EXPENSE`; **expenses only**.
 - Parser **`csv-parse`** (exact, sync); **multipart** upload (memory storage + limits).
 - Dedup **DB-level**: normalized `dedupHash` + **partial unique** `(userId, dedupHash) WHERE source='IMPORTED'`; `createMany skipDuplicates` (skip-not-fail); app-level pre-pass for summary quality only; **IMPORTED-scoped**.
-- **`ImportRun`** provenance + `importRunId` link; never stores raw CSV.
+- **`ImportRun`** provenance + `importRunId` link; never stores raw CSV; retrievable via owner-scoped `GET /api/v1/imports/:id`.
 - **CHECK rewritten** for four sources; **two-step migration** for the new enum value.
+- **Guaranteed counts are DB-derived** (`importedCount` = insert count); `duplicateRows` is best-effort/informational.
+- **Amount format:** dot-decimal and Brazilian `1.234,56` accepted; stable `reasonCode`s for row rejections.

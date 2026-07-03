@@ -9,6 +9,7 @@ import { APP_CONFIG, type AppConfig } from "./config/app-config";
 import { AppConfigModule } from "./config/config.module";
 import { ExpensesModule } from "./expenses/expenses.module";
 import { HealthModule } from "./health/health.module";
+import { ImportsModule } from "./imports/imports.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RecurringBillsModule } from "./recurring-bills/recurring-bills.module";
 
@@ -39,6 +40,7 @@ import { RecurringBillsModule } from "./recurring-bills/recurring-bills.module";
     ExpensesModule,
     RecurringBillsModule,
     CardsModule,
+    ImportsModule,
     HealthModule,
   ],
   providers: [

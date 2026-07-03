@@ -33,6 +33,7 @@ model User {
   recurringBills RecurringBill[]
   creditCards    CreditCard[]
   cardPurchases  CardPurchase[]
+  importRuns     ImportRun[]
 
   @@map("users")
 }
@@ -50,6 +51,7 @@ enum TransactionSource {
   MANUAL
   RECURRING
   CARD
+  IMPORTED
 }
 
 model Transaction {
@@ -83,6 +85,15 @@ model Transaction {
   invoiceCycle     String?          @db.Char(7) // "YYYY-MM" (closing month)
   installmentSeq   Int?             @db.SmallInt
   installmentTotal Int?             @db.SmallInt
+  // CSV-import link (csv-import). NULL for non-IMPORTED rows; both set for
+  // IMPORTED rows. `dedupHash` is sha-256 of the normalized (date, amountMinor,
+  // description) dedup key; a PARTIAL UNIQUE index (userId, dedupHash) WHERE
+  // source = 'IMPORTED' (raw SQL in the migration — Prisma cannot express the
+  // WHERE) is the DB-level R6 duplicate guarantee, scoped per user to imported
+  // rows only. The source-aware CHECK enforces the valid per-source link states.
+  dedupHash        String?          @db.Char(64)
+  importRunId      String?          @db.Uuid
+  importRun        ImportRun?       @relation(fields: [importRunId], references: [id], onDelete: Restrict)
   createdAt       DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
 
@@ -173,4 +184,36 @@ model CardPurchase {
   @@unique([userId, idempotencyKey])
   @@index([creditCardId])
   @@map("card_purchases")
+}
+
+// Import run / provenance (csv-import). One row per structurally valid import
+// file; every IMPORTED Transaction links back via `importRunId`. Counts are the
+// DB-derived per-file summary. `fileHash` is an optional sha-256 of the file
+// bytes; the raw CSV body is NEVER stored. FAILED is intentionally absent in
+// the MVP: structural failures persist nothing (no run), and the atomic
+// run+rows transaction means an observer only ever sees COMPLETED (PROCESSING
+// is transient inside the transaction); a FAILED status arrives with a future
+// async-import spec, if any. `onDelete: Restrict`.
+enum ImportStatus {
+  PROCESSING
+  COMPLETED
+}
+
+model ImportRun {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  user           User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status         ImportStatus  @default(PROCESSING)
+  totalRows      Int           @default(0)
+  importedCount  Int           @default(0)
+  duplicateCount Int           @default(0)
+  invalidCount   Int           @default(0)
+  fileHash       String?       @db.Char(64)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(6)
+
+  transactions   Transaction[]
+
+  @@index([userId])
+  @@map("import_runs")
 }

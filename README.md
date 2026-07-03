@@ -164,6 +164,40 @@ deleting them after creation (refund/chargeback/adjustment are future specs).
   same payload returns the existing purchase; the same key with a divergent
   payload or a different card returns **409**.
 
+### CSV import
+
+Bulk-import expense transactions from a bank/card statement CSV (all routes
+require `Authorization: Bearer <token>`; owner-scoped):
+
+- `POST /api/v1/imports` — multipart upload (field `file`), returns a 201
+  summary: `{ importRunId, totalRows, importedCount, duplicateCount,
+invalidCount, invalidRows[{ lineNumber, reasonCode }], duplicateRows }`
+- `GET /api/v1/imports/:id` — the import run (status + counts; 404 if not owned)
+
+**CSV schema (fixed, MVP).** UTF-8, header row required. Columns: **`date`**
+(`YYYY-MM-DD`), **`amount`**, **`description`** (required) plus optional
+`category` and `currency` (uppercase **BRL** only; defaults to BRL when
+absent). Both `,` and `;` delimiters are supported (detected from the header
+line). Amounts accept **dot-decimal** (`1234.56`) and **Brazilian**
+(`1.234,56`) forms — under the `,` delimiter a comma-bearing amount must be
+RFC-4180 quoted (`"1.234,56"`). Limits: **1 MiB** / **5000 rows** per file
+(oversized → 413/400, nothing persisted).
+
+Imported rows land in the ledger as `source = IMPORTED` (`type = EXPENSE` —
+**expenses only** in the MVP; no editing or deleting of imported rows). A
+structurally invalid file (bad header, malformed CSV) is rejected whole with
+nothing persisted; invalid **rows** never abort the import — they are reported
+in `invalidRows` with a stable `reasonCode` (`INVALID_DATE`,
+`INVALID_AMOUNT_FORMAT`, `NON_POSITIVE_AMOUNT`, `UNSUPPORTED_CURRENCY`,
+`MISSING_FIELD`, `FIELD_TOO_LONG`).
+
+**Dedup (R6).** A row matching an already-imported row on
+(date, amount, normalized description) is skipped, not duplicated — per-user,
+against **imported** rows only, guaranteed at the database by a partial unique
+index on `(userId, dedupHash)`; re-importing the same file inserts zero new
+rows and concurrent imports converge. `importedCount`/`duplicateCount` are
+DB-derived (`duplicateRows` line numbers are best-effort/informational).
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

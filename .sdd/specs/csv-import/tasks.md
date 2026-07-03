@@ -7,7 +7,7 @@
 
 ## 1. Dependency: CSV parser
 
-- [ ] 1.1 (P) Add `csv-parse` as an exact dependency
+- [x] 1.1 (P) Add `csv-parse` as an exact dependency
 
   **Goal**
   Bring in the vetted RFC-4180 parser (no hand-rolled parsing of untrusted input).
@@ -33,7 +33,7 @@
 
 ## 2. Schema, IMPORTED source, dedup index, and CHECK rewrite
 
-- [ ] 2.1 `ImportRun` model, `IMPORTED` enum value, `Transaction` import columns, partial unique index, source-aware CHECK (two-step migration)
+- [x] 2.1 `ImportRun` model, `IMPORTED` enum value, `Transaction` import columns, partial unique index, source-aware CHECK (two-step migration)
 
   **Goal**
   Persist provenance and give dedup + valid link states a DB-level guarantee.
@@ -66,7 +66,7 @@
 
 ## 3. Pure domain: dedup key, amount parsing, row validation
 
-- [ ] 3.1 (P) dedup-key module (normalization + hash)
+- [x] 3.1 (P) dedup-key module (normalization + hash)
 
   **Goal**
   Deterministic dedup key identical for equivalent rows.
@@ -90,7 +90,7 @@
 
   _Requirements: 2.3, 10.2_
 
-- [ ] 3.2 (P) Amount parser + RowValidator (pure)
+- [x] 3.2 (P) Amount parser + RowValidator (pure)
 
   **Goal**
   Deterministic row validation with stable reason codes; expenses only.
@@ -118,7 +118,7 @@
 
 ## 4. CSV parsing & structural validation
 
-- [ ] 4.1 CsvParser wrapper (csv-parse sync + schema check)
+- [x] 4.1 CsvParser wrapper (csv-parse sync + schema check)
 
   **Goal**
   Safely parse the untrusted buffer and enforce the fixed MVP schema.
@@ -146,7 +146,7 @@
 
 ## 5. Repository & atomic writer
 
-- [ ] 5.1 ImportsRepository + ImportLedgerWriter
+- [x] 5.1 ImportsRepository + ImportLedgerWriter
 
   **Goal**
   Owner-scoped reads and an atomic run+rows persist where a unique conflict is a skip, not a failure.
@@ -174,7 +174,7 @@
 
 ## 6. Import orchestration service
 
-- [ ] 6.1 ImportsService (import + getRun, DB-derived counts)
+- [x] 6.1 ImportsService (import + getRun, DB-derived counts)
 
   **Goal**
   Orchestrate limits → parse → validate → dedup → persist and build the summary; expose owner-scoped run retrieval.
@@ -203,7 +203,7 @@
 
 ## 7. Controller & module wiring
 
-- [ ] 7.1 ImportsController + ImportsModule
+- [x] 7.1 ImportsController + ImportsModule
 
   **Goal**
   Expose the multipart upload + run retrieval, protected by the global guard.
@@ -230,7 +230,7 @@
 
 ## 8. Integration & final gate
 
-- [ ] 8.1 CSV import integration suite (Testcontainers)
+- [x] 8.1 CSV import integration suite (Testcontainers)
 
   **Goal**
   Prove import, dedup (R6), partial success, limits, provenance, and isolation against real PostgreSQL.
@@ -256,7 +256,7 @@
 
   _Requirements: 1.1, 1.2, 1.3, 1.5, 2.1, 2.2, 2.4, 2.6, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 5.1, 5.2, 5.3, 7.1, 7.2, 8.1, 8.2, 8.5, 10.1, 10.3_
 
-- [ ] 8.2 Source-protection + CHECK-constraint integration assertions
+- [x] 8.2 Source-protection + CHECK-constraint integration assertions
 
   **Goal**
   Prove four-source ledger protection and reject invalid link states at the DB.
@@ -276,7 +276,7 @@
 
   _Requirements: 6.1, 6.2, 6.3, 6.4, 10.1_
 
-- [ ] 8.3 README + final quality gate
+- [x] 8.3 README + final quality gate
 
   **Goal**
   Document the import endpoints and confirm the monorepo gate is green.

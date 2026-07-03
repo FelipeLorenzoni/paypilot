@@ -212,7 +212,9 @@ interface ReminderDeliveryStore {
   finalize(identity: DeliveryIdentity, status: "SENT" | "FAILED" | "SKIPPED", errorCode?: string): Promise<void>;
 }
 ```
-- **State model**: `claim` = `INSERT … PENDING(attempt 1)`; on P2002 → atomic `updateMany({ where: identity + (status = FAILED OR (PENDING AND updatedAt < now − STALE_CLAIM_HOURS)), data: { status: PENDING, attempt: +1 } })`; `count 1` = re-claimed, `count 0` = already owned. `SENT`/`SKIPPED` terminal forever (incl. after paid→unpaid flips — 2.3 decision); `FAILED`/stale-`PENDING` re-claimable. `STALE_CLAIM_HOURS = 12` (documented constant; residual risk of one repeat after a crash mid-send is accepted and documented — reminders, not payments).
+- **State model**: `claim` = `INSERT … PENDING(attempt 1)`; on P2002 → atomic `updateMany({ where: identity + (status = FAILED OR (PENDING AND updatedAt < now − STALE_CLAIM_HOURS)), data: { status: PENDING, attempt: +1 } })`; `count 1` = re-claimed, `count 0` = already owned. `SENT`/`SKIPPED` terminal forever; `FAILED`/stale-`PENDING` re-claimable. `STALE_CLAIM_HOURS = 12` (documented constant).
+- **Delivery guarantee semantics (R2, stated precisely)**: the MVP guarantees **at most one successful *recorded* delivery per identity at the database level** (the unique index + terminal states). With a real external provider, true exactly-once **external** delivery cannot be guaranteed without provider-side idempotency, delivery receipts, or an outbox/provider-receipt design — a crash after the provider call but before `finalize(SENT)` leaves a stale `PENDING` whose re-claim could repeat the external send. In this spec that scenario cannot produce a real duplicate message: the MVP WhatsApp provider is a stub and automated tests use the log provider, so **real external duplicate delivery is out of scope here**. A future real-WhatsApp-provider spec MUST define provider idempotency (e.g. an idempotency key per delivery identity) or an equivalent delivery-confirmation strategy before going live. This design claims no stronger external exactly-once semantics than it can enforce.
+- **SKIPPED is terminal — explicit paid/unpaid interaction**: when an identity is finalized `SKIPPED` because the item became paid between claim and send, later unmarking the item as unpaid shall **not** re-open that consumed identity; unmarking paid only re-enables **future** reminder windows whose identities have not yet been consumed. Covered by integration tests (Testing Strategy).
 
 #### PaidStatusService / ReminderSettingsService
 ```typescript
@@ -316,7 +318,7 @@ Reuse `AllExceptionsFilter`: **400** (invalid DTO/phone/cycle), **401**, **404**
 
 ### Integration (Testcontainers, real PostgreSQL, serial, `TZ=America/Sao_Paulo`)
 - **Happy path**: user with enabled settings + due `RECURRING` row and due card invoice → one `SENT` delivery per item/window via fake provider; message/masking assertions on logs excluded (log content not asserted beyond absence of phone/body).
-- **R1**: paid marker (occurrence and invoice-level) → no delivery; **paid between claim and send** (marker inserted after claim) → `SKIPPED`, no send; unmark unpaid → future windows fire, consumed identities never re-fire.
+- **R1**: paid marker (occurrence and invoice-level) → no delivery; **paid between claim and send** (marker inserted after claim) → `SKIPPED`, no send; unmark unpaid → future (unconsumed) windows fire; **a `SKIPPED` identity does not re-open after paid→unpaid** (explicit test), and consumed (`SENT`) identities never re-fire either.
 - **R2**: re-run same evaluation → no second send (`already-owned`); overlapping concurrent evaluations → exactly one `SENT` per identity; provider failure → `FAILED` then next run retries and succeeds — still one `SENT`; unique index rejects a duplicate identity at the DB.
 - **Settings/opt-in**: disabled or no phone → no delivery rows; invalid phone → 400; settings/paid endpoints owner-scoped (cross-user → 404).
 - **Paid endpoint**: idempotent mark/unmark; CARD_INVOICE requires owned card + existing cycle rows; `MANUAL`/`IMPORTED` transaction id → 404 (not reminder-eligible).
@@ -330,7 +332,8 @@ Per-user isolation via token-derived userId + owner-scoped queries; the schedule
 - **Option B** (gap analysis): new `reminders/` module + `integrations/notifications/` port; ledger untouched; side tables for settings/markers/deliveries.
 - **R2 identity**: `(userId, targetType, targetKey, dueDate, windowDaysBefore, channel)` with `channel` from day one; canonical `targetKey` (`txn:<id>` / `card:<id>:<cycle>`) + typed FK columns + per-type CHECK.
 - **Target identities**: generated `RECURRING` transaction id; `creditCardId + invoiceCycle` (invoice-level paid markers).
-- **Claim state machine**: `PENDING → SENT | FAILED | SKIPPED`; terminal `SENT`/`SKIPPED`; re-claim `FAILED`/stale-`PENDING` (12 h) via atomic conditional update; already-claimed windows never re-fire.
+- **Claim state machine**: `PENDING → SENT | FAILED | SKIPPED`; terminal `SENT`/`SKIPPED` (a paid-then-unpaid flip never re-opens a consumed identity — only future unconsumed windows fire); re-claim `FAILED`/stale-`PENDING` (12 h) via atomic conditional update.
+- **Delivery guarantee (R2)**: at most one successful **recorded** delivery per identity, DB-guaranteed. True exactly-once **external** delivery is explicitly out of scope (stub provider + log provider in tests); a future real-provider spec must add provider idempotency or delivery confirmation.
 - **Windows/schedule**: D-3 + D-0; daily cron 12:00 UTC; catch-up = exact-match-only (missed windows skipped silently).
 - **Timezone anchor**: UTC calendar date of `Clock.now()` (recurring-bills precedent); all math on date strings.
 - **Provider**: `NOTIFICATION_PROVIDER` env (`log` default); WhatsApp ships as an **honest stub** (`FAILED`, never fabricated `SENT`); real adapter is a follow-up spec.

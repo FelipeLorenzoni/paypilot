@@ -198,6 +198,44 @@ index on `(userId, dedupHash)`; re-importing the same file inserts zero new
 rows and concurrent imports converge. `importedCount`/`duplicateCount` are
 DB-derived (`duplicateRows` line numbers are best-effort/informational).
 
+### Due-date reminders
+
+Proactive WhatsApp reminders for upcoming/same-day due dates of **unpaid**
+bills — generated recurring occurrences (`source = RECURRING`) and credit-card
+invoices (per card + cycle). Opt-in per user; all routes require
+`Authorization: Bearer <token>`:
+
+- `GET /api/v1/reminders/settings` — `{ phoneE164, enabled }` (defaults:
+  `null` / `false` — reminders are opt-in)
+- `PUT /api/v1/reminders/settings` — set the E.164 WhatsApp destination and
+  the enabled flag (invalid phone → 400)
+- `PUT /api/v1/reminders/paid` — mark/unmark an item paid (idempotent both
+  ways): `{ targetType: "RECURRING_TRANSACTION", transactionId, paid }` or
+  `{ targetType: "CARD_INVOICE", creditCardId, invoiceCycle, paid }`. Card
+  paid status is **invoice-level** (one marker covers the whole cycle).
+  Unknown/unowned/non-eligible targets → 404.
+
+**Windows & schedule.** A daily in-process job (12:00 UTC — 09:00 América/São
+Paulo; `pnpm --filter @paypilot/api remind:run [YYYY-MM-DD]` for manual runs)
+evaluates windows **D-3** and **D-0** against the UTC calendar date. A missed
+window is skipped silently (no stale reminders). Paid items are excluded at
+selection **and** re-checked immediately before sending (R1) — marking paid
+stops reminders; unmarking re-enables only windows not yet consumed (a
+`SENT`/`SKIPPED` identity never re-fires).
+
+**Delivery guarantee (R2).** At most one successful **recorded** delivery per
+`(user, target, dueDate, window, channel)`, enforced by a DB unique index with
+claim-before-send; retries after provider failures and concurrent/overlapping
+runs converge to a single send. True exactly-once **external** delivery is out
+of scope in this MVP: the default provider is the fake/log one
+(`NOTIFICATION_PROVIDER=log`, no credentials, no real messages), and the
+WhatsApp provider is a config-gated **stub** (`NOTIFICATION_PROVIDER=whatsapp`
+
+- `WHATSAPP_API_TOKEN` + `WHATSAPP_PHONE_NUMBER_ID`) that honestly records
+  failures instead of sending — the real Cloud-API adapter (with provider
+  idempotency/delivery confirmation) arrives in a future spec. Reminders never
+  mutate ledger transactions.
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

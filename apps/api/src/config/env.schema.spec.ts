@@ -103,4 +103,58 @@ describe("loadConfig", () => {
       ).toThrow(/AUTH_LOGIN_RATE_LIMIT_WINDOW/);
     });
   });
+
+  describe("notification provider selection", () => {
+    it("defaults to the log provider with no credentials required", () => {
+      const config = loadConfig(validEnv);
+      expect(config.notificationProvider).toBe("log");
+      expect(config.whatsapp).toBeNull();
+    });
+
+    it("rejects an unknown provider", () => {
+      expect(() =>
+        loadConfig({ ...validEnv, NOTIFICATION_PROVIDER: "carrier-pigeon" }),
+      ).toThrow(/NOTIFICATION_PROVIDER/);
+    });
+
+    it("requires both WhatsApp credentials when provider is whatsapp", () => {
+      expect(() =>
+        loadConfig({ ...validEnv, NOTIFICATION_PROVIDER: "whatsapp" }),
+      ).toThrow(/WHATSAPP_API_TOKEN, WHATSAPP_PHONE_NUMBER_ID/);
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          NOTIFICATION_PROVIDER: "whatsapp",
+          WHATSAPP_API_TOKEN: "tok",
+        }),
+      ).toThrow(/WHATSAPP_PHONE_NUMBER_ID/);
+    });
+
+    it("accepts whatsapp with both credentials and exposes them", () => {
+      const config = loadConfig({
+        ...validEnv,
+        NOTIFICATION_PROVIDER: "whatsapp",
+        WHATSAPP_API_TOKEN: "tok",
+        WHATSAPP_PHONE_NUMBER_ID: "12345",
+      });
+      expect(config.notificationProvider).toBe("whatsapp");
+      expect(config.whatsapp).toEqual({
+        apiToken: "tok",
+        phoneNumberId: "12345",
+      });
+    });
+
+    it("does not leak credential values in validation errors", () => {
+      try {
+        loadConfig({
+          ...validEnv,
+          NOTIFICATION_PROVIDER: "whatsapp",
+          WHATSAPP_API_TOKEN: "super-secret-token",
+        });
+        throw new Error("expected loadConfig to throw");
+      } catch (err) {
+        expect((err as Error).message).not.toContain("super-secret-token");
+      }
+    });
+  });
 });

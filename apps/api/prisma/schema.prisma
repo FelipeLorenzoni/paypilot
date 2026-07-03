@@ -34,6 +34,9 @@ model User {
   creditCards    CreditCard[]
   cardPurchases  CardPurchase[]
   importRuns     ImportRun[]
+  reminderSettings   ReminderSettings?
+  paymentMarkers     PaymentMarker[]
+  reminderDeliveries ReminderDelivery[]
 
   @@map("users")
 }
@@ -97,6 +100,11 @@ model Transaction {
   createdAt       DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
 
+  // Reminder-side inverse relations (due-date-reminders). Schema-file-only —
+  // the reminder tables reference RECURRING rows; no column is added here.
+  paymentMarkers     PaymentMarker[]
+  reminderDeliveries ReminderDelivery[]
+
   @@unique([recurringBillId, periodKey])
   @@index([userId, transactionDate, id])
   @@index([creditCardId, invoiceCycle])
@@ -150,6 +158,8 @@ model CreditCard {
 
   purchases        CardPurchase[]
   transactions     Transaction[]
+  paymentMarkers     PaymentMarker[]
+  reminderDeliveries ReminderDelivery[]
 
   @@index([userId])
   @@map("credit_cards")
@@ -216,4 +226,106 @@ model ImportRun {
 
   @@index([userId])
   @@map("import_runs")
+}
+
+// ---------------------------------------------------------------------------
+// due-date-reminders. Three side tables — the ledger is untouched (only the
+// inverse relation fields above, which generate no SQL). Target identity is
+// canonical: `targetType` + `targetKey` ("txn:<transactionId>" for
+// RECURRING_TRANSACTION, "card:<creditCardId>:<invoiceCycle>" for
+// CARD_INVOICE, server-derived only) plus typed FK columns for referential
+// integrity; a CHECK per targetType (raw SQL in the migration) enforces that
+// exactly the matching typed columns are set.
+// ---------------------------------------------------------------------------
+
+enum ReminderTargetType {
+  RECURRING_TRANSACTION
+  CARD_INVOICE
+}
+
+// Part of the ReminderDelivery identity from day one (R2) so future channels
+// need no schema change. MVP ships WhatsApp only.
+enum NotificationChannel {
+  WHATSAPP
+}
+
+// PENDING is the in-flight claim; SENT/SKIPPED are terminal forever (a
+// paid->unpaid flip never re-opens a consumed identity); FAILED and stale
+// PENDING are re-claimable (one attempt at a time).
+enum ReminderDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+// Per-user reminder settings (1:1). `enabled` defaults to false (opt-in);
+// a user without a row (or without a phone) is skipped, never errored.
+// The phone number is E.164 and is never logged unmasked.
+model ReminderSettings {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  phoneE164 String?  @db.VarChar(16)
+  enabled   Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("reminder_settings")
+}
+
+// Paid marker — row presence = paid (unmark deletes; both idempotent).
+// Invoice-level for cards: one marker per (userId, card, cycle) covers the
+// whole invoice. Never mutates ledger rows (R1 support only).
+model PaymentMarker {
+  id            String             @id @default(uuid()) @db.Uuid
+  userId        String             @db.Uuid
+  user          User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  targetType    ReminderTargetType
+  targetKey     String             @db.VarChar(90)
+  transactionId String?            @db.Uuid
+  transaction   Transaction?       @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  creditCardId  String?            @db.Uuid
+  creditCard    CreditCard?        @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  invoiceCycle  String?            @db.Char(7)
+  paidAt        DateTime           @db.Timestamptz(6)
+  createdAt     DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime           @updatedAt @db.Timestamptz(6)
+
+  @@unique([userId, targetType, targetKey])
+  @@index([userId])
+  @@map("payment_markers")
+}
+
+// One logical reminder delivery per R2 identity. The composite unique index is
+// the DB-level R2 guarantee: at most one successful RECORDED delivery per
+// (userId, targetType, targetKey, dueDate, windowDaysBefore, channel). True
+// exactly-once EXTERNAL delivery is out of scope for this spec (stub/log
+// providers only); a future real-provider spec must add provider idempotency
+// or delivery confirmation. `errorCode` is a stable code only — never message
+// bodies or PII.
+model ReminderDelivery {
+  id               String                 @id @default(uuid()) @db.Uuid
+  userId           String                 @db.Uuid
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  targetType       ReminderTargetType
+  targetKey        String                 @db.VarChar(90)
+  transactionId    String?                @db.Uuid
+  transaction      Transaction?           @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  creditCardId     String?                @db.Uuid
+  creditCard       CreditCard?            @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
+  invoiceCycle     String?                @db.Char(7)
+  dueDate          DateTime               @db.Date
+  windowDaysBefore Int                    @db.SmallInt
+  channel          NotificationChannel
+  status           ReminderDeliveryStatus @default(PENDING)
+  attempt          Int                    @default(1)
+  errorCode        String?                @db.VarChar(64)
+  sentAt           DateTime?              @db.Timestamptz(6)
+  createdAt        DateTime               @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime               @updatedAt @db.Timestamptz(6)
+
+  @@unique([userId, targetType, targetKey, dueDate, windowDaysBefore, channel], map: "reminder_deliveries_identity_uq")
+  @@index([userId])
+  @@map("reminder_deliveries")
 }

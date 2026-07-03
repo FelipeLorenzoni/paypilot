@@ -12,6 +12,7 @@ import { HealthModule } from "./health/health.module";
 import { ImportsModule } from "./imports/imports.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RecurringBillsModule } from "./recurring-bills/recurring-bills.module";
+import { RemindersModule } from "./reminders/reminders.module";
 
 /**
  * Root application module. The foundation cross-cutting modules plus auth.
@@ -41,6 +42,7 @@ import { RecurringBillsModule } from "./recurring-bills/recurring-bills.module";
     RecurringBillsModule,
     CardsModule,
     ImportsModule,
+    RemindersModule,
     HealthModule,
   ],
   providers: [

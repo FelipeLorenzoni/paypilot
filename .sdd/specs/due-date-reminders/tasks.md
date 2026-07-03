@@ -12,7 +12,7 @@
 
 ## 1. Schema: enums, settings, paid markers, deliveries
 
-- [ ] 1.1 New enums + `reminder_settings` + `payment_markers` + `reminder_deliveries` (single migration, ledger untouched)
+- [x] 1.1 New enums + `reminder_settings` + `payment_markers` + `reminder_deliveries` (single migration, ledger untouched)
 
   **Goal**
   Persist reminder settings, paid state, and the R2 delivery ledger with DB-level guarantees; leave existing tables' SQL untouched.
@@ -37,7 +37,7 @@
 
 ## 2. Integrations: NotificationProvider port
 
-- [ ] 2.1 (P) Port + Log provider + WhatsApp stub + config-driven selection
+- [x] 2.1 (P) Port + Log provider + WhatsApp stub + config-driven selection
 
   **Goal**
   First provider port (R7): every send behind a PayPilot-owned interface; fake/log default; honest WhatsApp stub; fail-fast config.
@@ -62,7 +62,7 @@
 
 ## 3. Pure domain: windows, target identity, message
 
-- [ ] 3.1 (P) Window/date logic + constants
+- [x] 3.1 (P) Window/date logic + constants
 
   **Goal**
   Deterministic window selection anchored to the UTC calendar date.
@@ -80,7 +80,7 @@
 
   _Requirements: 1.2, 1.5, 8.1, 8.2, 10.3_
 
-- [ ] 3.2 (P) Canonical target identity + message template
+- [x] 3.2 (P) Canonical target identity + message template
 
   **Goal**
   One stable identity used by markers and deliveries; deterministic user-facing message.
@@ -102,7 +102,7 @@
 
 ## 4. Data: due-item queries, paid checks, ownership
 
-- [ ] 4.1 RemindersRepository
+- [x] 4.1 RemindersRepository
 
   **Goal**
   Owner-correct reads: due unpaid items for enabled users; send-time paid re-check; target ownership resolution.
@@ -124,7 +124,7 @@
 
 ## 5. Data: ReminderDelivery claim state machine
 
-- [ ] 5.1 ReminderDeliveryStore (claim / finalize)
+- [x] 5.1 ReminderDeliveryStore (claim / finalize)
 
   **Goal**
   R2 as code: claim-before-send with the unique index as the source of truth; safe failed-retry; terminal states.
@@ -146,7 +146,7 @@
 
 ## 6. Application: settings, paid status, HTTP endpoints
 
-- [ ] 6.1 ReminderSettingsService + PaidStatusService + RemindersController + module wiring
+- [x] 6.1 ReminderSettingsService + PaidStatusService + RemindersController + module wiring
 
   **Goal**
   Owner-scoped settings and idempotent mark/unmark-paid over the canonical identity; wire the feature module.
@@ -169,7 +169,7 @@
 
 ## 7. Application: evaluation orchestration + scheduler
 
-- [ ] 7.1 ReminderEvaluationService + RemindersScheduler + CLI
+- [x] 7.1 ReminderEvaluationService + RemindersScheduler + CLI
 
   **Goal**
   The daily run: select → claim → re-check paid → send → finalize, with per-item isolation and counts-only summary.
@@ -192,7 +192,7 @@
 
 ## 8. Integration & final gate
 
-- [ ] 8.1 Reminder evaluation integration suite (Testcontainers)
+- [x] 8.1 Reminder evaluation integration suite (Testcontainers)
 
   **Goal**
   Prove eligibility, windows, R1, settings/opt-in, isolation, and the cross-feature due-date invariant on real PostgreSQL.
@@ -213,7 +213,7 @@
 
   _Requirements: 1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 3.1, 3.2, 3.3, 3.4, 6.3, 7.1, 7.2, 8.2, 9.1, 9.3, 10.1, 10.3_
 
-- [ ] 8.2 R2 idempotency + concurrency integration assertions
+- [x] 8.2 R2 idempotency + concurrency integration assertions
 
   **Goal**
   Prove at-most-one recorded delivery per identity under re-run, retry, and overlap — at the DB.
@@ -226,7 +226,7 @@
 
   _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 10.1_
 
-- [ ] 8.3 Settings/paid endpoints + ledger-untouched integration assertions
+- [x] 8.3 Settings/paid endpoints + ledger-untouched integration assertions
 
   **Goal**
   Prove endpoint semantics and that reminders never mutate the ledger.
@@ -240,7 +240,7 @@
 
   _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 6.1, 6.2, 6.4, 9.1, 9.3, 10.1_
 
-- [ ] 8.4 README + final quality gate
+- [x] 8.4 README + final quality gate
 
   **Goal**
   Document the reminder endpoints/behavior and confirm the monorepo gate is green.

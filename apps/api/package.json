@@ -9,6 +9,7 @@
     "type-check": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "generate:recurring": "node dist/recurring-bills/generate.cli.js",
+    "remind:run": "node dist/reminders/remind.cli.js",
     "test": "jest",
     "test:integration": "cross-env TZ=America/Sao_Paulo jest --config jest.integration.config.js"
   },

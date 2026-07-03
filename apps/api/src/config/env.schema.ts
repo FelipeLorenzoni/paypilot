@@ -78,8 +78,30 @@ const envSchema = z
       .positive()
       .default(100),
     AUTH_DEFAULT_RATE_LIMIT_WINDOW: z.string().min(1).default("1m"),
+
+    // due-date-reminders: outbound provider selection. Defaults to the
+    // fake/log provider, which needs no credentials (dev/test default per
+    // steering integrations.md). The WhatsApp credentials are required iff
+    // the whatsapp provider is selected (checked in superRefine).
+    NOTIFICATION_PROVIDER: z.enum(["log", "whatsapp"]).default("log"),
+    WHATSAPP_API_TOKEN: z.string().min(1).optional(),
+    WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
+    if (env.NOTIFICATION_PROVIDER === "whatsapp") {
+      for (const field of [
+        "WHATSAPP_API_TOKEN",
+        "WHATSAPP_PHONE_NUMBER_ID",
+      ] as const) {
+        if (!env[field]) {
+          ctx.addIssue({
+            code: "custom",
+            path: [field],
+            message: `${field} is required when NOTIFICATION_PROVIDER=whatsapp`,
+          });
+        }
+      }
+    }
     if (!isStrongSecret(env.JWT_SECRET, env.NODE_ENV)) {
       ctx.addIssue({
         code: "custom",
@@ -129,6 +151,13 @@ export interface AppConfig {
     readonly register: RateLimitConfig;
     readonly default: RateLimitConfig;
   };
+  /** Outbound notification provider selection (due-date-reminders). */
+  readonly notificationProvider: "log" | "whatsapp";
+  /** Present iff `notificationProvider === "whatsapp"`. Never logged. */
+  readonly whatsapp: {
+    readonly apiToken: string;
+    readonly phoneNumberId: string;
+  } | null;
 }
 
 /**
@@ -172,5 +201,14 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
         ttlMs: parseDurationMs(e.AUTH_DEFAULT_RATE_LIMIT_WINDOW) ?? 60_000,
       },
     },
+    notificationProvider: e.NOTIFICATION_PROVIDER,
+    whatsapp:
+      e.NOTIFICATION_PROVIDER === "whatsapp"
+        ? Object.freeze({
+            // superRefine guarantees presence when the provider is whatsapp.
+            apiToken: e.WHATSAPP_API_TOKEN as string,
+            phoneNumberId: e.WHATSAPP_PHONE_NUMBER_ID as string,
+          })
+        : null,
   });
 }

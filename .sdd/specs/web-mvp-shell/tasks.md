@@ -10,7 +10,7 @@
 
 ## 1. Foundations: contracts, formatters, UI primitives
 
-- [ ] 1.1 (P) Shared API contracts in `packages/shared`
+- [x] 1.1 (P) Shared API contracts in `packages/shared`
 
   **Goal**
   One typed source for every request/response shape the web consumes; API untouched.
@@ -27,7 +27,7 @@
 
   _Requirements: 4.2_
 
-- [ ] 1.2 (P) Formatters: money, date, amount input (pure + unit-tested)
+- [x] 1.2 (P) Formatters: money, date, amount input (pure + unit-tested)
 
   **Goal**
   The single deterministic money/date rendering path (no floats, no `Date` display math).
@@ -44,7 +44,7 @@
 
   _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-- [ ] 1.3 (P) UI primitives + tokens (accessibility built in)
+- [x] 1.3 (P) UI primitives + tokens (accessibility built in)
 
   **Goal**
   The minimal reusable component pattern every page copies — states + a11y solved once.
@@ -67,7 +67,7 @@
 
 ## 2. Session and API client
 
-- [ ] 2.1 SessionStore (localStorage + memory mirror + subscription)
+- [x] 2.1 SessionStore (localStorage + memory mirror + subscription)
 
   **Goal**
   Token persistence with change notification — the hook AuthProvider redirects from.
@@ -84,7 +84,7 @@
 
   _Requirements: 1.6, 2.5_
 
-- [ ] 2.2 Typed API client + `ApiError` + endpoint modules + query/mutation hooks
+- [x] 2.2 Typed API client + `ApiError` + endpoint modules + query/mutation hooks
 
   **Goal**
   The single fetch boundary: typed results, canonical-error parsing, no navigation.
@@ -106,7 +106,7 @@
 
 ## 3. Routes, guard, shell, and auth screens
 
-- [ ] 3.1 Route groups + AuthProvider guard + app shell + dashboard landing + crash net
+- [x] 3.1 Route groups + AuthProvider guard + app shell + dashboard landing + crash net
 
   **Goal**
   Deny-by-default protected area with the navigable shell; redirects owned here and only here.
@@ -125,7 +125,7 @@
 
   _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 6.7, 8.1_
 
-- [ ] 3.2 Login and register pages (Zod + canonical-error mapping + auto-login)
+- [x] 3.2 Login and register pages (Zod + canonical-error mapping + auto-login)
 
   **Goal**
   The public entry: validated forms proving the form/error conventions end-to-end.
@@ -147,7 +147,7 @@
 
 ## 4. Feature pages (parallel after tasks 1–3)
 
-- [ ] 4.1 (P) Expenses page
+- [x] 4.1 (P) Expenses page
 
   **Deliverables**
   - `(app)/expenses` + `features/expenses/`: paginated list via `GET /expenses` (`Paginated<ExpenseView>`), columns amount (`formatMoney`), date (`formatDate`), description, category; `Pagination` honoring `page`/`pageSize`; four states (`EmptyState` with guidance).
@@ -155,7 +155,7 @@
 
   _Requirements: 6.1, 6.6, 6.7, 8.1, 8.2_
 
-- [ ] 4.2 (P) Recurring-bills page
+- [x] 4.2 (P) Recurring-bills page
 
   **Deliverables**
   - `(app)/bills` + `features/bills/`: paginated list via `GET /recurring-bills` (amount, day of month, description, active badge) + minimal `active` filter surfaced; four states.
@@ -163,7 +163,7 @@
 
   _Requirements: 6.2, 6.6, 6.7, 8.1, 8.2_
 
-- [ ] 4.3 (P) Cards page + invoice view
+- [x] 4.3 (P) Cards page + invoice view
 
   **Deliverables**
   - `(app)/cards` + `features/cards/`: card list via `GET /credit-cards` (label, closing/due day, active); per card a `YYYY-MM` cycle picker (defaulting to current month) linking to `(app)/cards/[cardId]/invoices/[cycle]`, which renders the derived invoice (due date, `formatMoney` total, transaction rows) via `GET /credit-cards/:cardId/invoices/:cycle`; invoice 404 → friendly not-found state ("no invoice for this cycle").
@@ -171,7 +171,7 @@
 
   _Requirements: 6.3, 6.6, 6.7, 5.1, 8.1_
 
-- [ ] 4.4 (P) CSV-imports page
+- [x] 4.4 (P) CSV-imports page
 
   **Deliverables**
   - `(app)/imports` + `features/imports/`: upload form (`file` input) posting multipart to `POST /imports`; summary render (totals + imported/duplicate/invalid counts + invalid rows table with line number/reason code); 400/413 whole-file rejections → form-level error with `requestId`; run lookup by id via `GET /imports/:id` rendering `ImportRunView`.
@@ -179,7 +179,7 @@
 
   _Requirements: 6.4, 6.6, 6.7, 5.1, 5.2, 8.1_
 
-- [ ] 4.5 (P) Reminders/settings page
+- [x] 4.5 (P) Reminders/settings page
 
   **Deliverables**
   - `(app)/reminders` + `features/reminders/`: settings form over `GET/PUT /reminders/settings` (E.164 phone with Zod mirroring `^\+[1-9]\d{7,14}$`, enabled toggle); server `VALIDATION_ERROR` mapped to fields; saved state confirmation.
@@ -191,7 +191,7 @@
 
 ## 5. Final gate
 
-- [ ] 5.1 README (web section) + full quality gate
+- [x] 5.1 README (web section) + full quality gate
 
   **Goal**
   Document the web app and confirm the monorepo gate is green end-to-end.

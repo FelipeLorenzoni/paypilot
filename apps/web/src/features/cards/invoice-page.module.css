@@ -1,0 +1,26 @@
+.meta {
+  display: flex;
+  gap: var(--space-6);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  margin: 0;
+}
+
+.metaLabel {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.metaValue {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: var(--space-4);
+}

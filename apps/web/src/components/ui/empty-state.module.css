@@ -1,0 +1,15 @@
+.empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.title {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+}
+
+.description {
+  margin: 0 0 var(--space-4);
+}

@@ -236,6 +236,54 @@ WhatsApp provider is a config-gated **stub** (`NOTIFICATION_PROVIDER=whatsapp`
   idempotency/delivery confirmation) arrives in a future spec. Reminders never
   mutate ledger transactions.
 
+## Web app (`apps/web`)
+
+The authenticated web shell for PayPilot: public register/login over the
+auth-jwt API, a protected layout with navigation for every product area, one
+typed API client over the `packages/shared` contracts, and the shared UI
+conventions (Zod forms, canonical-error rendering, loading/empty/error/loaded
+states, deterministic money/date formatting) that feature UI specs build on.
+
+```bash
+pnpm --filter @paypilot/web dev    # Next.js dev server (needs the API running)
+pnpm --filter @paypilot/web test   # Vitest + Testing Library (jsdom, no network)
+```
+
+Configuration: `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:3000`) is
+the **only** web config — public by design, never secrets.
+
+**Routes.** Route groups split public from authenticated pages; everything
+under `(app)` is protected by the shared layout (deny by default — no per-page
+auth wiring):
+
+| Route                              | Content                                                     |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `/login`, `/register` (public)     | auth forms (Zod validation, canonical-error field mapping)  |
+| `/dashboard`                       | landing: greeting + shortcuts (real overview is a own spec) |
+| `/expenses`                        | paginated expense list                                      |
+| `/bills`                           | paginated recurring-bill list + active filter               |
+| `/cards`                           | card list + per-card `YYYY-MM` invoice-cycle picker         |
+| `/cards/[cardId]/invoices/[cycle]` | derived invoice (due date, total, transactions)             |
+| `/imports`                         | CSV upload + summary + past-run lookup                      |
+| `/reminders`                       | reminder settings (E.164 phone + enabled)                   |
+
+**Auth flow.** Register auto-logs-in (register → login → dashboard). The access
+token is stored in **localStorage with an in-memory mirror** — an MVP UX
+decision with a residual XSS-exposure risk, documented in the web-mvp-shell
+design (`.sdd/specs/web-mvp-shell/design.md`, Security Considerations): the API
+remains the security boundary (client-side route protection is a UX guard
+only), tokens never appear in URLs or logs, and future auth-hardening should
+consider httpOnly cookies and/or a refresh-token flow. Any API call returning
+`UNAUTHORIZED` clears the session; the layout guard observes the change and
+redirects to `/login` — an expired session is never a broken page.
+
+**Conventions.** Amounts stay integer minor units end-to-end and are formatted
+only at render (`R$ 1.234,56`, no float math); dates stay `YYYY-MM-DD` strings
+(rendered `DD/MM/YYYY` by string slicing). The API client (`src/lib/api`) is
+the only module that touches `fetch`; failures surface as one typed `ApiError`
+(code, message, `requestId`, optional field details) mapped to form fields or
+the shared `ErrorState`.
+
 ## Dependency & supply-chain policy
 
 Dependencies are pinned and hardened (see `docs/supply-chain.md` for the full

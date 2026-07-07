@@ -43,6 +43,10 @@ Per [[frontend-architecture]], this is a **frontend-only spec**: it consumes exi
 
 The initial feature pages are deliberately shallow: owner-scoped **read/list views** (plus the two flows whose UI is inherently part of the shell — CSV upload and reminder settings), proving the conventions end-to-end. Full CRUD editing per entity arrives in feature-specific UI specs on top of this shell.
 
+**Backend API prerequisites.** This spec may define pages and API-client functions for backend features whose specs are approved even where an endpoint is not yet available in a given environment (all 11 endpoints listed above are implemented on `main` at the time of writing; the clause guards environment/timing gaps). The rules: (a) **final integration acceptance requires the corresponding backend APIs to exist**; (b) during frontend development, pages and tests may mock the API-client boundary; (c) if an endpoint is unavailable at runtime, the UI shall fail gracefully through the shared `ErrorState` — the shell itself never breaks; (d) this spec shall **not** implement, modify, or stub backend endpoints.
+
+**Shared contract placement.** The design may promote request/response shapes consumed by the web app to `packages/shared`, under these constraints: web-mvp-shell remains frontend-only and backend behavior must not change; updating the API to import the new shared types is **optional** and shall only happen where it introduces zero backend logic changes; otherwise the type-drift risk is documented and backend adoption is left for a future cleanup spec.
+
 **Out of scope (deliberately excluded):** create/edit/delete UIs for expenses, bills, cards, and purchases (beyond what is listed here); the real monthly dashboard (own spec: monthly-dashboard); paid/unpaid actions in the UI (own spec: bill-payments); complex charts or analytics; server-side rendering of authenticated data / middleware-based auth (client-side protection is the MVP baseline); refresh tokens or session persistence beyond the stored access token; offline support; mobile app; i18n beyond a single fixed locale (pt-BR display, en codebase); and any full design system.
 
 ## Requirements
@@ -66,6 +70,7 @@ The initial feature pages are deliberately shallow: owner-scoped **read/list vie
 2. While no session is present, when a visitor navigates to any authenticated route, the Web App shall redirect to `/login` without rendering protected content or issuing authenticated API calls.
 3. If any API call returns the `UNAUTHORIZED` error code, then the Web App shall discard the session and redirect to `/login` (session-expiry degradation — never a broken page).
 4. When a session is present, the Web App shall resolve the current user via `GET /api/v1/auth/me` for display in the shell; while this resolution is pending, the shell shall show a loading state rather than flashing protected content.
+5. The design shall document the chosen token-storage mechanism and its trade-offs explicitly. Where browser storage (e.g. localStorage + in-memory mirror) is chosen, the design shall state that: it is an MVP UX decision carrying a residual XSS-exposure risk; the API remains the security boundary (client-side protection is a UX guard only); tokens are never logged or placed in URLs (per 1.6); and future auth-hardening shall consider httpOnly cookies and/or a refresh-token flow.
 
 ### Requirement 3: Authenticated Application Shell
 **Objective:** As a user, I want a consistent layout with navigation, so that every PayPilot area is reachable in one click.
@@ -104,6 +109,7 @@ The initial feature pages are deliberately shallow: owner-scoped **read/list vie
 4. The Web App shall provide a CSV-imports page with a file-upload form posting to `POST /api/v1/imports` (multipart), rendering the returned summary (totals, imported/duplicate/invalid counts, invalid rows with line number + reason code) and handling 400/413 whole-file rejections via Requirement 5; it shall allow fetching a past run by id via `GET /api/v1/imports/:id`.
 5. The Web App shall provide a Reminders/settings page that reads `GET /api/v1/reminders/settings` and updates via `PUT /api/v1/reminders/settings` (E.164 phone + enabled flag) with Zod validation mirroring the backend format and field-level error mapping.
 6. Every page in this requirement shall implement the four view states of Requirement 8 and shall render only the authenticated user's data (owner-scoping comes from the API; the Web App shall send no user identifiers of its own).
+7. If a consumed endpoint is unavailable at runtime (unreachable, or an unexpected failure shape), then the affected page shall degrade to the shared error state while the shell (layout, navigation, other pages) remains fully functional; final acceptance of each page requires the corresponding backend API to exist, while automated tests exercise the mocked API-client boundary. This spec shall not implement or modify any backend endpoint.
 
 ### Requirement 7: Money and Date Display Conventions
 **Objective:** As a maintainer, I want one deterministic way to render money and dates, so that financial display can never drift from the backend's conventions.

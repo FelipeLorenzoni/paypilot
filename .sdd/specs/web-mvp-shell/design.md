@@ -84,8 +84,9 @@ sequenceDiagram
         L->>L: field or form error requestId shown
     end
     Note over G,C: any later call returning UNAUTHORIZED
-    C->>S: clear session
-    C->>G: redirect login
+    C->>S: clear session and notify
+    S->>G: session change observed
+    G->>G: redirect login owned by guard
 ```
 Flow decisions: register performs auto-login (register → login → dashboard; a failure between the two lands on `/login` with a prompt). The guard renders a loading state until `getMe` resolves — protected content never flashes (2.4).
 
@@ -126,18 +127,30 @@ class ApiError { code: ErrorCode | "NETWORK_ERROR"; message: string; requestId: 
 // http core: request(path, { method, body?, auth?: boolean, formData? })
 // - attaches bearer from SessionStore when auth (default true)
 // - non-2xx → parse ErrorResponse → ApiError; unparseable/network → NETWORK_ERROR (retryable)
-// - UNAUTHORIZED → SessionStore.clear() + redirect to /login (single place, 2.3)
+// - UNAUTHORIZED → SessionStore.clear() (notifying the session layer via its
+//   change subscription) and returns the typed unauthorized ApiError. The
+//   client performs NO navigation — the redirect to /login is owned by
+//   AuthProvider/the (app) layout, which observes the session change (2.3).
 // endpoint modules: auth.ts, expenses.ts, bills.ts, cards.ts, imports.ts (FormData upload), reminders.ts
 ```
-- Invariants: no `fetch`/base-URL outside this folder; providers of failures never throw for expected errors — pages receive `ApiResult`; tokens never appear in URLs or logs.
+- Invariants: no `fetch`/base-URL outside this folder — but the client is **not** the owner of UI navigation (no router/`window.location` here); providers of failures never throw for expected errors — pages receive `ApiResult`; tokens never appear in URLs or logs.
 
 ### lib/session — store + guard
 ```typescript
-interface SessionStore { get(): string | null; set(token: string): void; clear(): void; } // localStorage + in-memory mirror
-// AuthProvider (client component in (app) layout):
+interface SessionStore {
+  get(): string | null;
+  set(token: string): void;
+  clear(): void;
+  subscribe(listener: () => void): () => void; // change notification
+} // localStorage + in-memory mirror
+// AuthProvider (client component in (app) layout) — the ONLY owner of auth
+// navigation/redirects:
 //  - no token → redirect /login (2.2)
-//  - token → getMe(); pending → full-page Loading (2.4); UNAUTHORIZED → clear + redirect
-//  - exposes useAuth(): { user, logout }  — logout = clear + redirect (1.5)
+//  - token → getMe(); pending → full-page Loading (2.4)
+//  - subscribes to SessionStore: when the session is cleared (logout, or the
+//    api client detecting UNAUTHORIZED), it performs the redirect to /login (2.3)
+//  - exposes useAuth(): { user, logout }  — logout = clear (redirect follows
+//    via the subscription) (1.5)
 ```
 
 ### lib/api/hooks — four-state data access
@@ -173,7 +186,7 @@ function useApiMutation<I, O>(fn: (input: I) => Promise<ApiResult<O>>): { run(in
 - Each page = thin `page.tsx` + `features/<area>` body using `useApiQuery` + primitives; all four states; oversized import file (413) and whole-file 400 render via `ErrorState`/form error with `requestId`.
 
 ## Error Handling
-Single mapping in one module (5.1): `VALIDATION_ERROR` → `details[].field` onto form fields (form-level fallback); `UNAUTHORIZED` → session clear + redirect (in the client core); `NOT_FOUND` → friendly state; `CONFLICT` → actionable message (e.g. email already registered); `TOO_MANY_REQUESTS`/`INTERNAL_ERROR`/`NETWORK_ERROR` → retryable generic message. `requestId` always displayed on request-level surfaces; raw backend messages never primary UX; no token/body logging in production builds. Unavailable endpoint (env/timing gap) = `NETWORK_ERROR` → per-page `ErrorState`; the shell chrome is data-independent and never breaks.
+Single mapping in one module (5.1): `VALIDATION_ERROR` → `details[].field` onto form fields (form-level fallback); `UNAUTHORIZED` → session cleared by the client, redirect performed by AuthProvider (2.3); `NOT_FOUND` → friendly state; `CONFLICT` → actionable message (e.g. email already registered); `TOO_MANY_REQUESTS`/`INTERNAL_ERROR`/`NETWORK_ERROR` → retryable generic message. `requestId` always displayed on request-level surfaces; raw backend messages never primary UX; no token/body logging in production builds. Unavailable endpoint (env/timing gap) = `NETWORK_ERROR` → per-page `ErrorState`; the shell chrome is data-independent and never breaks.
 
 ## Testing Strategy
 
@@ -195,6 +208,7 @@ Single mapping in one module (5.1): `VALIDATION_ERROR` → `details[].field` ont
 ## Resolved Decisions
 - **Option B** (gap analysis): instantiate the steering structure; zero backend edits.
 - **Session**: localStorage + in-memory mirror (risk documented above); logout = client-side discard (no backend endpoint exists).
+- **Navigation ownership (validate-design fix)**: the API client detects `UNAUTHORIZED`, clears the session, and notifies via the SessionStore subscription/typed result; **AuthProvider/the (app) layout owns every redirect to `/login`**. The client stays the only module touching `fetch`/base URL, but never navigates.
 - **Post-register**: auto-login (register → login → dashboard; mid-flow failure lands on `/login` with prompt).
 - **Data fetching**: hand-rolled `useApiQuery`/`useApiMutation`, component-local state (no cross-session leakage); TanStack Query deferred.
 - **Styling**: CSS Modules + `tokens.css`; Tailwind deferred.

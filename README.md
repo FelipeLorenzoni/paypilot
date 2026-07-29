@@ -4,6 +4,12 @@ Personal finance automation. Monorepo with a NestJS API (`apps/api`), a Next.js
 web app (`apps/web`), and framework-agnostic shared contracts
 (`packages/shared`).
 
+## Project status
+
+**Work in progress.** PayPilot is a backend-first personal project used to apply
+an AI-assisted SDD workflow. The API and engineering foundations are further
+along, while the Next.js frontend is still at an early stage.
+
 ## Prerequisites
 
 - **Node.js 24 LTS** — run `nvm use` (reads `.nvmrc`) or install Node `>=24 <25`.
@@ -309,3 +315,7 @@ part of this foundation.
 
 Money and time modeling conventions (binding for all features) are documented in
 `docs/conventions.md`.
+
+## License
+
+Apache-2.0 — see [`LICENSE`](LICENSE).

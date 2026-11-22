@@ -276,7 +276,8 @@ model ReminderSettings {
 
 // Paid marker — row presence = paid (unmark deletes; both idempotent).
 // Invoice-level for cards: one marker per (userId, card, cycle) covers the
-// whole invoice. Never mutates ledger rows (R1 support only).
+// whole invoice. Never mutates ledger rows. Written only by bill-payments;
+// read by reminders (R1) and the monthly dashboard.
 model PaymentMarker {
   id            String             @id @default(uuid()) @db.Uuid
   userId        String             @db.Uuid
@@ -288,7 +289,11 @@ model PaymentMarker {
   creditCardId  String?            @db.Uuid
   creditCard    CreditCard?        @relation(fields: [creditCardId], references: [id], onDelete: Restrict)
   invoiceCycle  String?            @db.Char(7)
+  // When the marker was recorded (Clock.now() at mark time).
   paidAt        DateTime           @db.Timestamptz(6)
+  // Payment date chosen by the user (bill-payments); date-only, never in the
+  // future. Back-filled from the UTC date of `paidAt` for older markers.
+  paidOn        DateTime           @db.Date
   createdAt     DateTime           @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime           @updatedAt @db.Timestamptz(6)
 

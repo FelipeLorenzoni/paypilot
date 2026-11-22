@@ -1,11 +1,7 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { CLOCK, type Clock } from "../common/clock";
-import { PrismaService } from "../prisma/prisma.service";
+import { Injectable } from "@nestjs/common";
+import type { PaidTargetInput } from "../bill-payments/bill-payments.repository";
+import { BillPaymentsService } from "../bill-payments/bill-payments.service";
 import type { ReminderTargetType } from "./domain/reminder-target";
-import {
-  type PaidTargetInput,
-  RemindersRepository,
-} from "./reminders.repository";
 
 export interface PaidStatusView {
   targetType: ReminderTargetType;
@@ -15,71 +11,27 @@ export interface PaidStatusView {
 }
 
 /**
- * Mark/unmark reminder-eligible items as paid (requirement 2). Paid = marker
- * row presence: mark is an idempotent upsert (`update: {}` — re-marking has no
- * side effects, the original `paidAt` stands), unmark an idempotent delete.
- * Never touches ledger rows; card markers are invoice-level (one per
- * (card, cycle)). Unknown/unowned targets — including MANUAL/IMPORTED ids —
- * are a 404 without disclosure.
+ * `PUT /reminders/paid`, kept for compatibility (bill-payments requirement
+ * 7.3). A thin adapter over the product-level BillPaymentsService: same
+ * ownership rules and idempotency, payment date always today, and the
+ * original reminders response shape (`paidAt` = when the payment was
+ * recorded; a re-mark keeps the original one).
  */
 @Injectable()
 export class PaidStatusService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly repo: RemindersRepository,
-    @Inject(CLOCK) private readonly clock: Clock,
-  ) {}
+  constructor(private readonly payments: BillPaymentsService) {}
 
   async setPaid(
     userId: string,
     input: PaidTargetInput,
     paid: boolean,
   ): Promise<PaidStatusView> {
-    const target = await this.repo.resolveOwnedTarget(userId, input);
-    if (!target) {
-      throw new NotFoundException();
-    }
-
-    if (paid) {
-      const marker = await this.prisma.paymentMarker.upsert({
-        where: {
-          userId_targetType_targetKey: {
-            userId,
-            targetType: target.targetType,
-            targetKey: target.targetKey,
-          },
-        },
-        create: {
-          userId,
-          targetType: target.targetType,
-          targetKey: target.targetKey,
-          transactionId: target.transactionId,
-          creditCardId: target.creditCardId,
-          invoiceCycle: target.invoiceCycle,
-          paidAt: this.clock.now(),
-        },
-        update: {},
-      });
-      return {
-        targetType: target.targetType,
-        targetKey: target.targetKey,
-        paid: true,
-        paidAt: marker.paidAt.toISOString(),
-      };
-    }
-
-    await this.prisma.paymentMarker.deleteMany({
-      where: {
-        userId,
-        targetType: target.targetType,
-        targetKey: target.targetKey,
-      },
-    });
+    const view = await this.payments.setPayment(userId, { ...input, paid });
     return {
-      targetType: target.targetType,
-      targetKey: target.targetKey,
-      paid: false,
-      paidAt: null,
+      targetType: view.targetType,
+      targetKey: view.targetKey,
+      paid: view.paid,
+      paidAt: view.recordedAt,
     };
   }
 }

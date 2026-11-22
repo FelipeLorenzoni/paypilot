@@ -366,6 +366,7 @@ describe("due-date-reminders integration (real PostgreSQL)", () => {
             targetKey: target.targetKey,
             transactionId: txnId,
             paidAt: new Date(),
+            paidOn: new Date("2026-03-12T00:00:00.000Z"),
           },
         });
         return items;
@@ -746,9 +747,9 @@ describe("due-date-reminders integration (real PostgreSQL)", () => {
     // RECURRING_TRANSACTION marker carrying card columns → rejected.
     await expect(
       prisma.$executeRaw`INSERT INTO "payment_markers"
-        ("id", "userId", "targetType", "targetKey", "transactionId", "creditCardId", "invoiceCycle", "paidAt", "updatedAt")
+        ("id", "userId", "targetType", "targetKey", "transactionId", "creditCardId", "invoiceCycle", "paidAt", "paidOn", "updatedAt")
         VALUES (gen_random_uuid(), ${userAId}::uuid, 'RECURRING_TRANSACTION', 'txn:bad', ${rentTxnId}::uuid,
-                (SELECT "id" FROM "credit_cards" LIMIT 1), '2026-03', now(), now())`,
+                (SELECT "id" FROM "credit_cards" LIMIT 1), '2026-03', now(), CURRENT_DATE, now())`,
     ).rejects.toThrow(/payment_markers_target_chk/);
 
     // CARD_INVOICE delivery without its card columns → rejected.

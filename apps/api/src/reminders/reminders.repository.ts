@@ -10,16 +10,7 @@ import {
   type DueItem,
   recurringTarget,
   type ReminderTarget,
-  type ReminderTargetType,
 } from "./domain/reminder-target";
-
-/** Client-shaped input for paid-status operations (validated by DTOs). */
-export interface PaidTargetInput {
-  targetType: ReminderTargetType;
-  transactionId?: string;
-  creditCardId?: string;
-  invoiceCycle?: string;
-}
 
 /**
  * Reads for the reminder flow. Cross-feature but strictly READ-ONLY over the
@@ -157,48 +148,5 @@ export class RemindersRepository {
       },
     });
     return marker !== null;
-  }
-
-  /**
-   * Resolve a client-supplied target to its canonical identity iff it exists
-   * and belongs to the user (2.5): an owned `source = RECURRING` row, or an
-   * owned card with at least one CARD row in the cycle. Anything else —
-   * including MANUAL/IMPORTED transaction ids — resolves to null (→ 404).
-   */
-  async resolveOwnedTarget(
-    userId: string,
-    input: PaidTargetInput,
-  ): Promise<ReminderTarget | null> {
-    if (input.targetType === "RECURRING_TRANSACTION") {
-      if (!input.transactionId) {
-        return null;
-      }
-      const row = await this.prisma.transaction.findFirst({
-        where: { id: input.transactionId, userId, source: "RECURRING" },
-        select: { id: true },
-      });
-      return row ? recurringTarget(row.id) : null;
-    }
-
-    if (!input.creditCardId || !input.invoiceCycle) {
-      return null;
-    }
-    const card = await this.prisma.creditCard.findFirst({
-      where: { id: input.creditCardId, userId },
-      select: { id: true },
-    });
-    if (!card) {
-      return null;
-    }
-    const anyRow = await this.prisma.transaction.findFirst({
-      where: {
-        userId,
-        source: "CARD",
-        creditCardId: input.creditCardId,
-        invoiceCycle: input.invoiceCycle,
-      },
-      select: { id: true },
-    });
-    return anyRow ? cardInvoiceTarget(card.id, input.invoiceCycle) : null;
   }
 }

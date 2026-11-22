@@ -29,3 +29,19 @@ export type {
   ImportRunView,
 } from "./imports";
 export type { ReminderSettingsView, ReminderSettingsUpdate } from "./reminders";
+export type {
+  SummarySource,
+  DueTargetType,
+  SourceSubtotal,
+  CategorySubtotal,
+  CurrencySummary,
+  DueStatus,
+  DueItemView,
+  DueTotals,
+  MonthlySummaryView,
+} from "./dashboard";
+export type {
+  PayableTargetType,
+  SetBillPaymentRequest,
+  BillPaymentView,
+} from "./bill-payments";

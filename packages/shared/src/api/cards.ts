@@ -35,5 +35,8 @@ export interface InvoiceView {
   cycle: string; // YYYY-MM (closing month)
   dueDate: string; // YYYY-MM-DD
   totalMinor: number;
+  /** Invoice-level paid state (bill-payments). */
+  paid: boolean;
+  paidOn: string | null; // YYYY-MM-DD
   transactions: InvoiceTransactionView[];
 }

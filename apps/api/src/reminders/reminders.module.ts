@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ScheduleModule } from "@nestjs/schedule";
+import { BillPaymentsModule } from "../bill-payments/bill-payments.module";
 import { NotificationsModule } from "../integrations/notifications/notifications.module";
 import { PaidStatusService } from "./paid-status.service";
 import { ReminderDeliveryStore } from "./reminder-delivery.store";
@@ -17,7 +18,7 @@ import { RemindersScheduler } from "./reminders.scheduler";
  * the scheduler runs in-process via @nestjs/schedule (CLI for manual runs).
  */
 @Module({
-  imports: [ScheduleModule.forRoot(), NotificationsModule],
+  imports: [ScheduleModule.forRoot(), NotificationsModule, BillPaymentsModule],
   controllers: [RemindersController],
   providers: [
     RemindersRepository,

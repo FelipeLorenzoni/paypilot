@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { BillPaymentsRepository } from "../bill-payments/bill-payments.repository";
 import { toAmountNumber } from "../common/ledger-money-date";
 import { PrismaService } from "../prisma/prisma.service";
+import { cardInvoiceTarget } from "../reminders/domain/reminder-target";
 import {
   type CardTransactionResponse,
   toCardTransactionResponse,
@@ -13,6 +15,9 @@ export interface InvoiceView {
   cycle: string; // YYYY-MM (closing month)
   dueDate: string; // YYYY-MM-DD
   totalMinor: number;
+  /** Invoice-level paid state (bill-payments). */
+  paid: boolean;
+  paidOn: string | null; // YYYY-MM-DD
   transactions: CardTransactionResponse[];
 }
 
@@ -26,6 +31,7 @@ export class InvoicesService {
   constructor(
     private readonly cards: CreditCardsRepository,
     private readonly prisma: PrismaService,
+    private readonly payments: BillPaymentsRepository,
   ) {}
 
   async getInvoice(
@@ -49,12 +55,18 @@ export class InvoicesService {
     });
 
     const totalMinor = rows.reduce((sum, row) => sum + row.amountMinor, 0n);
+    const payment = await this.payments.findPayment(
+      userId,
+      cardInvoiceTarget(cardId, cycle),
+    );
 
     return {
       cardId,
       cycle,
       dueDate: dueDate(cycle, card.closingDay, card.dueDay),
       totalMinor: toAmountNumber(totalMinor),
+      paid: payment !== null,
+      paidOn: payment?.paidOn ?? null,
       transactions: rows.map(toCardTransactionResponse),
     };
   }

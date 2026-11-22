@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { BillPaymentsModule } from "../bill-payments/bill-payments.module";
 import { CardLedgerWriter } from "./card-ledger-writer";
 import { CreditCardsController } from "./credit-cards.controller";
 import { CreditCardsRepository } from "./credit-cards.repository";
@@ -15,6 +16,7 @@ import { PurchasesService } from "./purchases.service";
  * edit/delete endpoints (out of scope for this spec).
  */
 @Module({
+  imports: [BillPaymentsModule],
   controllers: [CreditCardsController, PurchasesController, InvoicesController],
   providers: [
     CreditCardsService,

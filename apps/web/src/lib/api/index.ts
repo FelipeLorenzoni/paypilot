@@ -6,3 +6,5 @@ export * as billsApi from "./bills";
 export * as cardsApi from "./cards";
 export * as importsApi from "./imports";
 export * as remindersApi from "./reminders";
+export * as dashboardApi from "./dashboard";
+export * as billPaymentsApi from "./bill-payments";

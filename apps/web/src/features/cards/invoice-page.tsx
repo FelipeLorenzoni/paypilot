@@ -10,6 +10,7 @@ import { Table } from "../../components/ui/table";
 import { useApiQuery } from "../../lib/api/hooks";
 import { getInvoice } from "../../lib/api/cards";
 import { formatDate, formatMoney } from "../../lib/format";
+import { PaymentAction } from "../bill-payments/payment-action";
 import styles from "./invoice-page.module.css";
 
 const COLUMNS = [
@@ -78,6 +79,24 @@ export function InvoicePage({
                 {formatMoney(state.data.totalMinor, "BRL")}
               </span>
             </p>
+            <div className={styles.metaItem}>
+              <span className={styles.metaLabel}>Payment</span>
+              <span className={styles.metaValue}>
+                {state.data.paid && state.data.paidOn
+                  ? `Paid on ${formatDate(state.data.paidOn)}`
+                  : "Not paid"}
+              </span>
+              <PaymentAction
+                target={{
+                  targetType: "CARD_INVOICE",
+                  creditCardId: cardId,
+                  invoiceCycle: cycle,
+                }}
+                paid={state.data.paid}
+                label={`invoice ${cycle}`}
+                onChanged={state.refresh}
+              />
+            </div>
           </div>
           {state.data.transactions.length > 0 ? (
             <Table

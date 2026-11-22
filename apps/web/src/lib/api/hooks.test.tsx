@@ -152,3 +152,62 @@ describe("useApiMutation", () => {
     );
   });
 });
+
+function RefreshProbe({
+  fn,
+}: {
+  fn: () => Promise<ApiResult<string[]>>;
+}): ReactNode {
+  const state = useApiQuery(fn, []);
+  const [outcome, setOutcome] = useState("none");
+  if (state.status !== "loaded") return <p>state:{state.status}</p>;
+  return (
+    <div>
+      <p>state:loaded:{state.data.join(",")}</p>
+      <p>outcome:{outcome}</p>
+      <button
+        onClick={() =>
+          void state.refresh().then((ok) => setOutcome(String(ok)))
+        }
+      >
+        refresh
+      </button>
+    </div>
+  );
+}
+
+describe("useApiQuery refresh", () => {
+  it("refetches in place, without a loading state, and replaces the data", async () => {
+    let resolveSecond!: (value: ApiResult<string[]>) => void;
+    const fn = vi
+      .fn<() => Promise<ApiResult<string[]>>>()
+      .mockResolvedValueOnce(ok(["a"]))
+      .mockReturnValueOnce(new Promise((r) => (resolveSecond = r)));
+    render(<RefreshProbe fn={fn} />);
+    await screen.findByText("state:loaded:a");
+
+    await userEvent.click(screen.getByRole("button", { name: "refresh" }));
+    // Still showing the previous data while the refetch is in flight.
+    expect(screen.getByText("state:loaded:a")).toBeDefined();
+    expect(screen.queryByText("state:loading")).toBeNull();
+
+    await act(async () => resolveSecond(ok(["a", "b"])));
+    expect(screen.getByText("state:loaded:a,b")).toBeDefined();
+    expect(screen.getByText("outcome:true")).toBeDefined();
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the current data and resolves false when the refetch fails", async () => {
+    const fn = vi
+      .fn<() => Promise<ApiResult<string[]>>>()
+      .mockResolvedValueOnce(ok(["a"]))
+      .mockResolvedValueOnce(fail("INTERNAL_ERROR", "boom"));
+    render(<RefreshProbe fn={fn} />);
+    await screen.findByText("state:loaded:a");
+
+    await userEvent.click(screen.getByRole("button", { name: "refresh" }));
+
+    await screen.findByText("outcome:false");
+    expect(screen.getByText("state:loaded:a")).toBeDefined();
+  });
+});

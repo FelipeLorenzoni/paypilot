@@ -1,27 +1,121 @@
-.greeting {
+.month {
   margin: 0 0 var(--space-6);
 }
 
-.shortcuts {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.panels {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--space-4);
+  margin-bottom: var(--space-6);
 }
 
-.shortcut {
-  display: block;
+.panel {
   padding: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  color: var(--color-text);
-  text-decoration: none;
+}
+
+.panelTitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+}
+
+.total {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.sources {
+  margin: 0;
+}
+
+.sourceRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+}
+
+.sourceRow dt {
+  color: var(--color-text-muted);
+}
+
+.sourceRow dd {
+  margin: 0;
   font-weight: 600;
 }
 
-.shortcut:hover {
-  border-color: var(--color-primary);
+.note {
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.dueSummary + .dueSummary {
+  margin-top: var(--space-3);
+}
+
+.overdueLine,
+.dueLine {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.overdueLine {
+  color: var(--color-danger);
+}
+
+.sectionTitle {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--font-size-lg);
+}
+
+.carriedOver {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.status {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+
+.paidOn {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.statusOverdue {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.statusDue {
+  color: var(--color-text);
+}
+
+.statusPaid {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.primaryAction {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-weight: 600;
+  text-decoration: none;
 }

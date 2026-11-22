@@ -80,9 +80,14 @@ export class GenerationService {
       }
     }
 
-    this.logger.log(
-      `generation period=${period} created=${summary.created} skipped=${summary.skipped} failed=${summary.failed}`,
-    );
+    // Hourly ticks are mostly no-ops: only runs that changed something or
+    // failed are worth an info line (app-timezone).
+    const message = `generation period=${period} created=${summary.created} skipped=${summary.skipped} failed=${summary.failed}`;
+    if (summary.created > 0 || summary.failed > 0) {
+      this.logger.log(message);
+    } else {
+      this.logger.debug(message);
+    }
     return summary;
   }
 

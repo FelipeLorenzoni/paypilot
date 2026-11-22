@@ -1,13 +1,4 @@
-import { lookbackFrom, monthOf, monthRange, shiftMonth } from "./month-range";
-
-describe("monthOf (UTC calendar month of an instant)", () => {
-  it("returns the UTC month, not the local one", () => {
-    expect(monthOf(new Date("2026-07-15T12:00:00Z"))).toBe("2026-07");
-    // 23:30 at UTC-3 on Jul 31 is already Aug 1 in UTC.
-    expect(monthOf(new Date("2026-08-01T02:30:00Z"))).toBe("2026-08");
-    expect(monthOf(new Date("2026-12-31T23:59:59.999Z"))).toBe("2026-12");
-  });
-});
+import { lookbackFrom, monthRange, shiftMonth } from "./month-range";
 
 describe("monthRange (inclusive date-only boundaries)", () => {
   it("uses the real length of a 31-day month", () => {

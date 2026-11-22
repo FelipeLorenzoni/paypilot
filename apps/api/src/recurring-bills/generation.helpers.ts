@@ -1,20 +1,4 @@
-import type { Clock } from "../common/clock";
-
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
-
-/**
- * Derive the target generation period (`"YYYY-MM"`) from the clock using the
- * **UTC calendar month** of the current instant — never server-local time and
- * never `Date.now()` directly (depends on the {@link Clock} port). This keeps
- * the scheduled period deterministic and timezone-independent (requirements
- * R7.4 / R9): two instances in different timezones derive the same period.
- */
-export function deriveCurrentPeriod(clock: Clock): string {
-  const now = clock.now();
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth() + 1; // getUTCMonth is 0-based
-  return `${year}-${String(month).padStart(2, "0")}`;
-}
 
 /** Number of days in the calendar month of a `"YYYY-MM"` period (UTC). */
 function daysInMonth(period: string): number {

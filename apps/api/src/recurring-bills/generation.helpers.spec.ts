@@ -1,38 +1,4 @@
-import { FixedClock } from "../common/clock";
-import {
-  clampDay,
-  deriveCurrentPeriod,
-  isEligible,
-} from "./generation.helpers";
-
-describe("deriveCurrentPeriod", () => {
-  it("uses the UTC calendar month of the clock instant", () => {
-    expect(
-      deriveCurrentPeriod(new FixedClock(new Date("2026-03-15T12:00:00Z"))),
-    ).toBe("2026-03");
-    expect(
-      deriveCurrentPeriod(new FixedClock(new Date("2026-01-01T00:00:00Z"))),
-    ).toBe("2026-01");
-  });
-
-  it("is stable across the UTC month boundary regardless of local time", () => {
-    // 2026-01-31T23:30Z is still January in UTC...
-    expect(
-      deriveCurrentPeriod(new FixedClock(new Date("2026-01-31T23:30:00Z"))),
-    ).toBe("2026-01");
-    // ...and 2026-02-01T00:30Z has crossed into February in UTC.
-    expect(
-      deriveCurrentPeriod(new FixedClock(new Date("2026-02-01T00:30:00Z"))),
-    ).toBe("2026-02");
-  });
-
-  it("does not depend on the process timezone", () => {
-    // This suite runs under TZ=America/Sao_Paulo in integration; the result is
-    // computed purely from UTC getters, so the period must not shift.
-    const instant = new Date("2026-12-31T23:00:00Z");
-    expect(deriveCurrentPeriod(new FixedClock(instant))).toBe("2026-12");
-  });
-});
+import { clampDay, isEligible } from "./generation.helpers";
 
 describe("clampDay", () => {
   it("returns the requested day when the month is long enough", () => {

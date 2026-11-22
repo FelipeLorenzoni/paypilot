@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { GenerationService } from "./generation.service";
 import type { RecurringBillsRepository } from "./recurring-bills.repository";
 
@@ -106,5 +107,24 @@ describe("GenerationService.generateForPeriod", () => {
       skipped: 0,
       failed: 1,
     });
+  });
+
+  it("logs at debug level when a run created nothing and nothing failed", async () => {
+    const log = jest.spyOn(Logger.prototype, "log").mockImplementation();
+    const debug = jest.spyOn(Logger.prototype, "debug").mockImplementation();
+    const unique = Object.assign(new Error("dup"), { code: "P2002" });
+    try {
+      const { service } = build([bill()], jest.fn().mockRejectedValue(unique));
+      await service.generateForPeriod("2026-03");
+      expect(log).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining("skipped=1"));
+
+      const fresh = build([bill()]);
+      await fresh.service.generateForPeriod("2026-03");
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("created=1"));
+    } finally {
+      log.mockRestore();
+      debug.mockRestore();
+    }
   });
 });

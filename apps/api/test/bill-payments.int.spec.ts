@@ -13,7 +13,7 @@ import {
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { AllExceptionsFilter } from "../src/common/all-exceptions.filter";
-import { CLOCK, FixedClock } from "../src/common/clock";
+import { CLOCK } from "../src/common/clock";
 import { requestIdMiddleware } from "../src/common/request-id";
 import {
   NOTIFICATION_PROVIDER,
@@ -28,6 +28,13 @@ import { ReminderEvaluationService } from "../src/reminders/reminder-evaluation.
 const PW = "valid-password-123";
 /** "Today" for every request: 2026-11-21 (UTC). */
 const NOW = new Date("2026-11-21T12:00:00.000Z");
+// Fixed by default; a test may move it and must restore NOW afterwards.
+const clock = {
+  instant: NOW,
+  now(): Date {
+    return this.instant;
+  },
+};
 
 /** Recording fake provider — no external calls. */
 class RecordingProvider implements NotificationProvider {
@@ -140,7 +147,7 @@ describe("bill-payments integration (real PostgreSQL)", () => {
       imports: [AppModule],
     })
       .overrideProvider(CLOCK)
-      .useValue(new FixedClock(NOW))
+      .useValue(clock)
       .overrideProvider(NOTIFICATION_PROVIDER)
       .useValue(provider)
       .compile();
@@ -410,5 +417,23 @@ describe("bill-payments integration (real PostgreSQL)", () => {
         paid: true,
       })
       .expect(404);
+  });
+
+  it("uses the business date late on a São Paulo evening (app-timezone)", async () => {
+    // 22:30 on Nov 21 in São Paulo is already Nov 22 in UTC.
+    clock.instant = new Date("2026-11-22T01:30:00.000Z");
+    try {
+      await pay(authA(), condo({ paid: false })).expect(200);
+      const marked = await pay(authA(), condo({ paid: true })).expect(200);
+      expect(marked.body.paidOn).toBe("2026-11-21");
+      expect(marked.body.recordedAt).toBe("2026-11-22T01:30:00.000Z");
+      await pay(authA(), condo({ paid: false })).expect(200);
+
+      await pay(authA(), condo({ paid: true, paidOn: "2026-11-22" })).expect(
+        400,
+      );
+    } finally {
+      clock.instant = NOW;
+    }
   });
 });

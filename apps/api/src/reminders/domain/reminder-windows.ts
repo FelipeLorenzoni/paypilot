@@ -2,8 +2,8 @@ import { REMINDER_WINDOWS_DAYS_BEFORE } from "../reminder.constants";
 
 /**
  * Pure window/date logic (requirements 1.2, 1.5, 8.1, 8.2). No clock read —
- * "today" is an input (the UTC calendar date of `Clock.now()`, the
- * recurring-bills `deriveCurrentPeriod` precedent). All arithmetic happens on
+ * "today" is an input (the business date from `BusinessCalendar`,
+ * app-timezone). All arithmetic happens on
  * `YYYY-MM-DD` strings via UTC getters, so results are identical under any
  * process timezone.
  */
@@ -39,13 +39,13 @@ export function addDays(dateIso: string, days: number): string {
 }
 
 /**
- * The reminder windows matching `todayUtc` for a due date: exactly those `w`
+ * The reminder windows matching `today` for a due date: exactly those `w`
  * where `today + w == dueDate`. Past windows never match (catch-up is
  * exact-match-only per design).
  */
-export function windowsFor(dueDate: string, todayUtc: string): number[] {
+export function windowsFor(dueDate: string, today: string): number[] {
   toUtcMillis(dueDate); // validate both inputs up front
   return REMINDER_WINDOWS_DAYS_BEFORE.filter(
-    (w) => addDays(todayUtc, w) === dueDate,
+    (w) => addDays(today, w) === dueDate,
   );
 }

@@ -1,18 +1,29 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BusinessCalendar } from "../common/business-calendar";
 import { FixedClock } from "../common/clock";
+import type { AppConfig } from "../config/app-config";
 import { recurringTarget } from "../reminders/domain/reminder-target";
 import type { BillPaymentsRepository } from "./bill-payments.repository";
 import { BillPaymentsService } from "./bill-payments.service";
 
 const USER_ID = "9c8b7a6d-2222-4333-8444-555566667777";
 const TXN_ID = "8a4f0e1a-1111-4222-8333-444455556666";
-// 01:30Z on Nov 22 is still Nov 21 in São Paulo: "today" must be the UTC date.
+// 01:30Z on Nov 22 is still Nov 21 (22:30) in São Paulo: business today is
+// Nov 21, while the recorded instant stays the raw UTC clock value.
 const NOW = new Date("2026-11-22T01:30:00.000Z");
 const TARGET = recurringTarget(TXN_ID);
 const IDENTITY = {
   targetType: "RECURRING_TRANSACTION" as const,
   transactionId: TXN_ID,
 };
+
+function clockAndCalendar(): [FixedClock, BusinessCalendar] {
+  const clock = new FixedClock(NOW);
+  return [
+    clock,
+    new BusinessCalendar(clock, { timeZone: "America/Sao_Paulo" } as AppConfig),
+  ];
+}
 
 function build(resolved: typeof TARGET | null = TARGET) {
   const repo = {
@@ -30,13 +41,13 @@ function build(resolved: typeof TARGET | null = TARGET) {
   };
   const service = new BillPaymentsService(
     repo as unknown as BillPaymentsRepository,
-    new FixedClock(NOW),
+    ...clockAndCalendar(),
   );
   return { service, repo };
 }
 
 describe("BillPaymentsService.setPayment", () => {
-  it("marks paid with today's UTC date when no date is given", async () => {
+  it("marks paid with business today when no date is given", async () => {
     const { service, repo } = build();
 
     const view = await service.setPayment(USER_ID, { ...IDENTITY, paid: true });
@@ -44,14 +55,14 @@ describe("BillPaymentsService.setPayment", () => {
     expect(repo.markPaid).toHaveBeenCalledWith(
       USER_ID,
       TARGET,
-      "2026-11-22",
+      "2026-11-21",
       NOW,
     );
     expect(view).toEqual({
       targetType: "RECURRING_TRANSACTION",
       targetKey: `txn:${TXN_ID}`,
       paid: true,
-      paidOn: "2026-11-22",
+      paidOn: "2026-11-21",
       recordedAt: NOW.toISOString(),
     });
   });
@@ -69,16 +80,16 @@ describe("BillPaymentsService.setPayment", () => {
     expect(view.paidOn).toBe("2026-11-09");
   });
 
-  it("accepts today as the payment date", async () => {
+  it("accepts business today as the payment date", async () => {
     const { service } = build();
 
     await expect(
       service.setPayment(USER_ID, {
         ...IDENTITY,
         paid: true,
-        paidOn: "2026-11-22",
+        paidOn: "2026-11-21",
       }),
-    ).resolves.toMatchObject({ paidOn: "2026-11-22" });
+    ).resolves.toMatchObject({ paidOn: "2026-11-21" });
   });
 
   it("rejects a future payment date before resolving the target", async () => {
@@ -88,7 +99,7 @@ describe("BillPaymentsService.setPayment", () => {
       service.setPayment(USER_ID, {
         ...IDENTITY,
         paid: true,
-        paidOn: "2026-11-23",
+        paidOn: "2026-11-22", // already today in UTC, tomorrow locally
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(repo.resolveOwnedTarget).not.toHaveBeenCalled();

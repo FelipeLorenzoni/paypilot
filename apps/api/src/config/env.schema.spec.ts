@@ -157,4 +157,33 @@ describe("loadConfig", () => {
       }
     });
   });
+
+  describe("business timezone (APP_TIME_ZONE)", () => {
+    it("defaults to America/Sao_Paulo", () => {
+      expect(loadConfig(validEnv).timeZone).toBe("America/Sao_Paulo");
+    });
+
+    it("accepts UTC and other IANA names", () => {
+      expect(loadConfig({ ...validEnv, APP_TIME_ZONE: "UTC" }).timeZone).toBe(
+        "UTC",
+      );
+      expect(
+        loadConfig({ ...validEnv, APP_TIME_ZONE: "America/New_York" }).timeZone,
+      ).toBe("America/New_York");
+    });
+
+    it.each(["Mars/Olympus_Mons", "+03:00", "-0300", ""])(
+      "rejects %p without leaking the value",
+      (value) => {
+        try {
+          loadConfig({ ...validEnv, APP_TIME_ZONE: value });
+          throw new Error("expected loadConfig to throw");
+        } catch (err) {
+          const message = (err as Error).message;
+          expect(message).toMatch(/APP_TIME_ZONE/);
+          if (value) expect(message).not.toContain(value);
+        }
+      },
+    );
+  });
 });

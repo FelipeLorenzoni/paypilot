@@ -13,7 +13,7 @@ import {
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { AllExceptionsFilter } from "../src/common/all-exceptions.filter";
-import { CLOCK, FixedClock } from "../src/common/clock";
+import { CLOCK } from "../src/common/clock";
 import { requestIdMiddleware } from "../src/common/request-id";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { GenerationService } from "../src/recurring-bills/generation.service";
@@ -21,6 +21,13 @@ import { GenerationService } from "../src/recurring-bills/generation.service";
 const PW = "valid-password-123";
 /** "Today" for every request: 2026-11-21 (UTC). */
 const NOW = new Date("2026-11-21T12:00:00.000Z");
+// Fixed by default; a test may move it and must restore NOW afterwards.
+const clock = {
+  instant: NOW,
+  now(): Date {
+    return this.instant;
+  },
+};
 
 describe("monthly-dashboard integration (real PostgreSQL)", () => {
   let container: StartedPostgreSqlContainer;
@@ -92,7 +99,7 @@ describe("monthly-dashboard integration (real PostgreSQL)", () => {
       imports: [AppModule],
     })
       .overrideProvider(CLOCK)
-      .useValue(new FixedClock(NOW))
+      .useValue(clock)
       .compile();
     app = moduleRef.createNestApplication({ logger: false });
     app.use(requestIdMiddleware);
@@ -334,5 +341,26 @@ describe("monthly-dashboard integration (real PostgreSQL)", () => {
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
 
     await api().get("/api/v1/dashboard/summary").expect(401);
+  });
+
+  it("keeps the business month until local midnight on the 1st (app-timezone)", async () => {
+    // 23:00 on Nov 30 in São Paulo is already Dec 1 in UTC.
+    clock.instant = new Date("2026-12-01T02:00:00.000Z");
+    try {
+      const res = await api()
+        .get("/api/v1/dashboard/summary")
+        .set(authA())
+        .expect(200);
+
+      expect(res.body).toMatchObject({ month: "2026-11", today: "2026-11-30" });
+      const internet = await billTxnId(internetBillId, "2026-11");
+      expect(
+        res.body.dueItems.find(
+          (item: { targetKey: string }) => item.targetKey === `txn:${internet}`,
+        ),
+      ).toMatchObject({ dueDate: "2026-11-25", status: "OVERDUE" });
+    } finally {
+      clock.instant = NOW;
+    }
   });
 });

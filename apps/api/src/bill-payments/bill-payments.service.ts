@@ -5,15 +5,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { BillPaymentView, SetBillPaymentRequest } from "@paypilot/shared";
+import { BusinessCalendar } from "../common/business-calendar";
 import { CLOCK, type Clock } from "../common/clock";
-import { toDateString } from "../common/ledger-money-date";
 import { BillPaymentsRepository } from "./bill-payments.repository";
 
 /**
  * Product-level paid state (requirements 2, 3). Mark records a payment dated
- * today (UTC calendar date of the injected clock) or an earlier date the user
- * chose — never a future one; unmark removes it. Both are idempotent and
- * never look at the item's due date. Date rules run before the target is
+ * business today (app-timezone) or an earlier date the user chose — never a
+ * future one; unmark removes it. Both are idempotent and never look at the
+ * item's due date. Date rules run before the target is
  * resolved, so a bad date never reveals whether a target exists.
  */
 @Injectable()
@@ -21,14 +21,16 @@ export class BillPaymentsService {
   constructor(
     private readonly repo: BillPaymentsRepository,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly calendar: BusinessCalendar,
   ) {}
 
   async setPayment(
     userId: string,
     input: SetBillPaymentRequest,
   ): Promise<BillPaymentView> {
+    // The recorded instant stays the raw clock (UTC); only the date is local.
     const now = this.clock.now();
-    const today = toDateString(now);
+    const today = this.calendar.today();
 
     if (!input.paid && input.paidOn !== undefined) {
       throw new BadRequestException("paidOn is only allowed when paid is true");

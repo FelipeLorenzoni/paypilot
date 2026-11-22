@@ -51,6 +51,21 @@ function isStrongSecret(secret: string, nodeEnv: string): boolean {
   return decodedByteLength(secret) >= 32;
 }
 
+/**
+ * True for a timezone name the runtime's ICU resolves (IANA names and `UTC`).
+ * Offset strings such as `+03:00` are accepted by `Intl` but are not zone
+ * names (they never observe DST), so they are rejected.
+ */
+export function isIanaTimeZone(value: string): boolean {
+  if (/^[+-]/.test(value)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -86,6 +101,10 @@ const envSchema = z
     NOTIFICATION_PROVIDER: z.enum(["log", "whatsapp"]).default("log"),
     WHATSAPP_API_TOKEN: z.string().min(1).optional(),
     WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
+
+    // app-timezone: the business timezone every "today"/current month is
+    // derived in (docs/conventions.md — explicit zone, never the server's).
+    APP_TIME_ZONE: z.string().min(1).default("America/Sao_Paulo"),
   })
   .superRefine((env, ctx) => {
     if (env.NOTIFICATION_PROVIDER === "whatsapp") {
@@ -107,6 +126,13 @@ const envSchema = z
         code: "custom",
         path: ["JWT_SECRET"],
         message: "JWT_SECRET is missing, too weak, or a placeholder",
+      });
+    }
+    if (!isIanaTimeZone(env.APP_TIME_ZONE)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["APP_TIME_ZONE"],
+        message: "APP_TIME_ZONE must be an IANA timezone name",
       });
     }
     const ttl = parseDurationMs(env.JWT_ACCESS_TTL);
@@ -158,6 +184,8 @@ export interface AppConfig {
     readonly apiToken: string;
     readonly phoneNumberId: string;
   } | null;
+  /** Business timezone (IANA name) for calendar dates (app-timezone). */
+  readonly timeZone: string;
 }
 
 /**
@@ -210,5 +238,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
             phoneNumberId: e.WHATSAPP_PHONE_NUMBER_ID as string,
           })
         : null,
+    timeZone: e.APP_TIME_ZONE,
   });
 }

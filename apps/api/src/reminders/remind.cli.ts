@@ -2,8 +2,7 @@ import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../app.module";
-import { CLOCK, type Clock } from "../common/clock";
-import { toDateString } from "../common/ledger-money-date";
+import { BusinessCalendar } from "../common/business-calendar";
 import { ReminderEvaluationService } from "./reminder-evaluation.service";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -13,7 +12,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
  *
  *   pnpm --filter @paypilot/api remind:run 2026-03-07
  *
- * With no argument it uses the current UTC calendar date. Idempotent: safe to
+ * With no argument it uses business today (app-timezone). Idempotent: safe to
  * re-run — already-claimed identities are skipped (R2).
  */
 async function main(): Promise<void> {
@@ -26,8 +25,8 @@ async function main(): Promise<void> {
     if (arg !== undefined && !DATE.test(arg)) {
       throw new Error(`Invalid date "${arg}" (expected YYYY-MM-DD)`);
     }
-    const todayUtc = arg ?? toDateString(app.get<Clock>(CLOCK).now());
-    const summary = await app.get(ReminderEvaluationService).evaluate(todayUtc);
+    const today = arg ?? app.get(BusinessCalendar).today();
+    const summary = await app.get(ReminderEvaluationService).evaluate(today);
     logger.log(`done ${JSON.stringify(summary)}`);
   } finally {
     await app.close();

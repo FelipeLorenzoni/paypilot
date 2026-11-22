@@ -21,11 +21,6 @@ function formatMonth(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
-/** UTC calendar month of an instant: `"2026-07"`. */
-export function monthOf(now: Date): string {
-  return formatMonth(now.getUTCFullYear(), now.getUTCMonth() + 1);
-}
-
 /** Inclusive date-only boundaries of a `YYYY-MM` month (UTC, short-month safe). */
 export function monthRange(month: string): { start: string; end: string } {
   const parsed = parseMonth(month);

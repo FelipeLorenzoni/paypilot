@@ -1,4 +1,6 @@
+import { BusinessCalendar } from "../common/business-calendar";
 import { FixedClock } from "../common/clock";
+import type { AppConfig } from "../config/app-config";
 import type { DashboardRepository } from "./dashboard.repository";
 import { DashboardService } from "./dashboard.service";
 import type { LedgerRow } from "./domain/summarize-month";
@@ -36,25 +38,40 @@ function build(
   };
   const service = new DashboardService(
     repo as unknown as DashboardRepository,
-    new FixedClock(new Date(now)),
+    new BusinessCalendar(new FixedClock(new Date(now)), {
+      timeZone: "America/Sao_Paulo",
+    } as AppConfig),
   );
   return { service, repo };
 }
 
 describe("DashboardService.getSummary", () => {
-  it("defaults to the clock's UTC month and derives today from it", async () => {
-    // 22:30 on Nov 30 at UTC-3 is already Dec 1 in UTC.
+  it("defaults to the business month and derives business today", async () => {
+    // 22:30 on Nov 30 in São Paulo is already Dec 1 in UTC.
     const { service, repo } = build("2026-12-01T01:30:00.000Z");
 
     const view = await service.getSummary(USER_ID);
 
-    expect(view.month).toBe("2026-12");
-    expect(view.today).toBe("2026-12-01");
+    expect(view.month).toBe("2026-11");
+    expect(view.today).toBe("2026-11-30");
     expect(repo.findMonthRows).toHaveBeenCalledWith(
       USER_ID,
-      "2026-12-01",
-      "2026-12-31",
+      "2026-11-01",
+      "2026-11-30",
     );
+  });
+
+  it("keeps a bill due on the month's last day Due until local midnight", async () => {
+    const row = recurringRow(TXN_ID, "2026-11-30");
+
+    const evening = build("2026-12-01T02:00:00.000Z", { monthRows: [row] });
+    const before = await evening.service.getSummary(USER_ID);
+    expect(before.dueItems.map((item) => item.status)).toEqual(["DUE"]);
+
+    const after = build("2026-12-01T03:00:00.000Z", { monthRows: [row] });
+    const next = await after.service.getSummary(USER_ID, "2026-11");
+    expect(next.today).toBe("2026-12-01");
+    expect(next.dueItems.map((item) => item.status)).toEqual(["OVERDUE"]);
   });
 
   it("reads the requested month and the three previous months for carry-over", async () => {

@@ -41,7 +41,7 @@ export class ReminderEvaluationService {
     private readonly provider: NotificationProvider,
   ) {}
 
-  async evaluate(todayUtc: string): Promise<EvaluationSummary> {
+  async evaluate(today: string): Promise<EvaluationSummary> {
     const summary: EvaluationSummary = {
       evaluated: 0,
       sent: 0,
@@ -51,12 +51,12 @@ export class ReminderEvaluationService {
     };
 
     const dueDates = [
-      ...new Set(REMINDER_WINDOWS_DAYS_BEFORE.map((w) => addDays(todayUtc, w))),
+      ...new Set(REMINDER_WINDOWS_DAYS_BEFORE.map((w) => addDays(today, w))),
     ];
     const items = await this.repo.findDueItems(dueDates);
 
     for (const item of items) {
-      for (const windowDays of windowsFor(item.dueDate, todayUtc)) {
+      for (const windowDays of windowsFor(item.dueDate, today)) {
         summary.evaluated += 1;
         try {
           await this.processOne(item, windowDays, summary);
@@ -71,7 +71,7 @@ export class ReminderEvaluationService {
     }
 
     this.logger.log(
-      `reminders today=${todayUtc} evaluated=${summary.evaluated} sent=${summary.sent} ` +
+      `reminders today=${today} evaluated=${summary.evaluated} sent=${summary.sent} ` +
         `skippedClaimed=${summary.skippedClaimed} skippedPaid=${summary.skippedPaid} failed=${summary.failed}`,
     );
     return summary;

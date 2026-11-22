@@ -70,9 +70,18 @@ dashboard is **read-only** and mutates no ledger rows (source protection).
 - **Current month** — the calendar month (in the application's configured
   timezone) that contains the injected "today".
 - **Summary source** — one of `MANUAL`, `RECURRING`, `CARD`, `IMPORTED`.
-- **Upcoming due item** — a payable item (recurring bill occurrence or card
-  invoice) whose due date falls on or after "today" and within the current
-  month.
+- **Payable item** — a recurring bill occurrence or a card invoice. Manual and
+  imported rows are already-incurred spend and are never payable items.
+- **Due item** — a payable item shown in the dashboard's due list. It is either
+  a payable item of the current month (any due date within the month), or an
+  **unpaid** payable item of an earlier month inside the overdue look-back
+  window (a *carried-over* item).
+- **Due status** — a backend-reported state of a due item: `PAID` (a paid
+  marker exists), `OVERDUE` (unpaid and due date before "today"), or `DUE`
+  (unpaid and due date on or after "today").
+- **Overdue look-back window** — the fixed number of calendar months before the
+  current month whose unpaid payable items are carried over into the due list
+  (MVP: 3 months, a backend constant).
 - **Paid status "when available"** — displayed only where a backend read of
   paid/unpaid state exists; this depends on the `bill-payments` spec and must
   degrade gracefully until then.
@@ -139,24 +148,42 @@ not have to reconcile areas myself.
 4. The PayPilot Dashboard shall present a per-source subtotal so the user can
    see how the monthly total decomposes by source.
 
-### Requirement 4: Upcoming due items
+### Requirement 4: Due items — overdue, due, and paid
 
-**Objective:** As a user, I want to see what is still due this month, so that I
-can act before due dates pass.
+**Objective:** As a user, I want one list that tells me what is overdue, what is
+still to be paid, and what is already paid, so that I can act on late bills
+and before due dates pass — and an unpaid bill never disappears from view just
+because its due date has passed.
+
+> **Revision (design review, 2026-11-21):** the original 4.1 listed only items
+> with `dueDate >= today`, which hid unpaid bills the day after their due date.
+> Requirement 4 now covers overdue items explicitly.
 
 #### Acceptance Criteria
 
 1. When the monthly summary is loaded, the PayPilot Dashboard shall display a
-   list of upcoming due items whose due date is on or after "today" and within
-   the current month.
-2. The PayPilot Dashboard shall sort upcoming due items by due date ascending,
-   and shall render each item's amount, due date, source, and description.
-3. The PayPilot Dashboard shall render due dates as date-only `YYYY-MM-DD`
+   due list containing (a) every payable item of the current month, whatever
+   its due date, and (b) every **unpaid** payable item of the overdue
+   look-back window (carried-over items).
+2. The PayPilot Dashboard shall show each due item's due status exactly as
+   reported by the backend: `OVERDUE`, `DUE`, or `PAID`.
+3. The PayPilot Dashboard shall order the due list `OVERDUE` first, then
+   `DUE`, then `PAID`; within each status by due date ascending; and shall
+   render each item's amount, due date, source, description, and status.
+4. The PayPilot Dashboard shall display, as reported by the backend, the count
+   and the per-currency amount of `OVERDUE` items and of `DUE` items, so the
+   user sees "how much is late" and "how much is still to pay" at a glance.
+5. The PayPilot Dashboard shall mark carried-over items as belonging to an
+   earlier month, and carried-over items shall **not** contribute to the
+   current month's totals, source subtotals, or category breakdown
+   (Requirements 2, 3, 6).
+6. The PayPilot Dashboard shall render due dates as date-only `YYYY-MM-DD`
    values via the shared date formatter, without constructing timezone-shifted
    `Date` objects.
-4. If there are no upcoming due items in the remainder of the current month,
-   then the PayPilot Dashboard shall render a first-class empty state (e.g.
-   "nothing due for the rest of the month"), not a blank list.
+7. If the due list is empty, then the PayPilot Dashboard shall render a
+   first-class empty state (e.g. "nothing overdue or due this month"), not a
+   blank list.
+8. Status shall be conveyed by text (a badge label), never by colour alone.
 
 ### Requirement 5: Paid / unpaid status (when available)
 
@@ -168,7 +195,7 @@ that upcoming-due information is not misleading.
 1. Where the backend provides paid/unpaid state for a payable item, the PayPilot
    Dashboard shall display that item's paid or unpaid status.
 2. Where paid state is available, the PayPilot Dashboard shall visually
-   distinguish paid items from unpaid items in the upcoming-due list.
+   distinguish paid items from unpaid (overdue or due) items in the due list.
 3. While no backend read of paid state is available, the PayPilot Dashboard
    shall omit paid indicators gracefully and shall neither error nor block the
    rest of the summary.
@@ -226,7 +253,11 @@ truth without computing schedules, invoices, or occurrences client-side.
 
 1. The PayPilot API shall provide a read-only capability that returns, for the
    authenticated user and a requested month, the monthly total(s), per-source
-   subtotals, category breakdown, and upcoming due items in one response.
+   subtotals, category breakdown, the due list with each item's due status,
+   and the overdue/due counts and amounts, in one response.
+8. The PayPilot API shall compute due status server-side from the injected
+   "today" and the paid markers; the frontend shall never derive `OVERDUE`
+   from comparing dates.
 2. The PayPilot API shall aggregate all four ledger sources (`MANUAL`,
    `RECURRING`, `CARD`, `IMPORTED`) server-side, including generated `RECURRING`
    and `IMPORTED` rows and derived card invoices, so no source is missing from
@@ -253,8 +284,9 @@ month's payable items, so that Requirement 5 can show accurate status.
 #### Acceptance Criteria
 
 1. Where paid-status read exposure exists, the PayPilot API shall report, for
-   the current month's payable items, whether each item is paid, using the
-   existing payment-marker semantics from `due-date-reminders`.
+   the current month's payable items and the look-back window's payable items,
+   whether each item is paid, using the existing payment-marker semantics from
+   `due-date-reminders`.
 2. The PayPilot API shall report paid state without mutating markers or ledger
    rows, and shall keep it scoped to the authenticated user.
 3. This requirement depends on the `bill-payments` spec; while paid-status read

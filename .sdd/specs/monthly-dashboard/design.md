@@ -22,13 +22,17 @@ The design turns on one rule, stated once here and enforced everywhere below:
 source** — and because a `CARD` row's `transactionDate` *is its invoice's due
 date*, a card invoice is counted in the month it is **due**, not the month the
 purchase was made. This makes the dashboard a **cash-out view** of the month, in
-which the monthly total and the upcoming-due list are two projections of one row
-set and therefore cannot contradict each other (research.md, D1).
+which the monthly total and the month's due items are two projections of one row
+set and therefore cannot contradict each other (research.md, D1). Unpaid bills
+of the three previous months are carried into the due list as `OVERDUE` without
+touching the month's totals (research.md, D9 — revision of 2026-11-21).
 
 ### Goals
 
 - One authenticated page showing the current month's total, per-source
-  subtotals, category breakdown, and upcoming due items with paid status.
+  subtotals, category breakdown, and a due list in which every payable item
+  carries a backend-computed status — `OVERDUE`, `DUE` or `PAID` — including
+  unpaid items carried over from the overdue look-back window (D9).
 - One backend capability (`GET /dashboard/summary`) that computes all of it,
   owner-scoped, from an injected clock, in integer minor units.
 - Determinism: same rows + same injected `today` → same response, always.
@@ -159,9 +163,11 @@ sequenceDiagram
   S->>S: month = month param or current month
   S->>R: findMonthRows(userId, monthStart, monthEnd)
   R-->>S: ledger rows with card label
-  S->>R: findPaidKeys(userId, derived target keys)
+  S->>R: findPayableRows(userId, lookbackStart, dayBefore(monthStart))
+  R-->>S: RECURRING and CARD rows of the look-back window
+  S->>R: findPaidKeys(userId, derived target keys of both row sets)
   R-->>S: paid markers
-  S->>D: summarizeMonth(rows, markers, today, monthEnd)
+  S->>D: summarizeMonth(rows, carryOverRows, markers, today)
   D-->>S: MonthlySummaryView
   S-->>Ctl: MonthlySummaryView
   Ctl-->>C: 200 JSON
@@ -176,8 +182,11 @@ sequenceDiagram
   and the repository are clock-free, which is what makes them deterministic under
   test (10.1).
 - The paid lookup happens **after** the rows are known: the target keys are
-  derived from the month's payable rows, so the marker query is bounded by what
-  is actually on screen.
+  derived from the month's payable rows **and** the look-back window's payable
+  rows, so the marker query is bounded by what can actually be on screen.
+- The look-back window is `OVERDUE_LOOKBACK_MONTHS = 3` whole calendar months
+  before `monthStart` (`lookbackStart = monthRange(month − 3).start`). It is a
+  backend constant, not a request parameter (D9).
 - An `UNAUTHORIZED` response never reaches the page: the API client clears the
   session and `AuthProvider` redirects (`web-mvp-shell` navigation ownership —
   no router calls in `lib/api`). This satisfies 1.3 with existing code.
@@ -195,12 +204,16 @@ sequenceDiagram
 | 3.1, 3.2 | All four sources, each amount counted once | `DashboardRepository.findMonthRows`, `summarizeMonth` | `SourceSubtotal` | Sequence |
 | 3.3 | Absent source shows as zero | `summarizeMonth` | `bySource` always length 4 | — |
 | 3.4 | Per-source subtotal | `TotalsPanel` | `CurrencySummary.bySource` | — |
-| 4.1, 4.2 | Upcoming due items, sorted by due date | `summarizeMonth`, `UpcomingDueList` | `MonthlySummaryView.upcomingDueItems` | Sequence |
-| 4.3 | Date-only rendering | `UpcomingDueList`, `formatDate` | `DueItemView.dueDate` | — |
-| 4.4 | Empty due list is first-class | `UpcomingDueList` | — | — |
-| 5.1, 5.2 | Paid status shown and visually distinguished | `DashboardRepository.findPaidKeys`, `summarizeMonth`, `UpcomingDueList` | `DueItemView.paid`, `paidAt` | Sequence |
-| 5.3 | Graceful when unavailable | `UpcomingDueList` | `paid` is always present (available from day one) | — |
-| 5.4 | Never infer paid client-side | `UpcomingDueList` | — | — |
+| 4.1 | Month items + carried-over unpaid items | `DashboardRepository.findMonthRows` / `findPayableRows`, `summarizeMonth` | `MonthlySummaryView.dueItems` | Sequence |
+| 4.2, 4.8 | Backend status shown as a text badge | `summarizeMonth`, `DueItemsList` | `DueItemView.status` | — |
+| 4.3 | Ordered OVERDUE → DUE → PAID, then due date | `summarizeMonth` | `dueItems` order | — |
+| 4.4 | Overdue / due counts and amounts | `summarizeMonth`, `DueSummaryPanel` | `MonthlySummaryView.dueTotals` | — |
+| 4.5 | Carried-over items flagged, excluded from totals | `summarizeMonth`, `DueItemsList` | `DueItemView.carriedOver` | — |
+| 4.6 | Date-only rendering | `DueItemsList`, `formatDate` | `DueItemView.dueDate` | — |
+| 4.7 | Empty due list is first-class | `DueItemsList` | — | — |
+| 5.1, 5.2 | Paid status shown and visually distinguished | `DashboardRepository.findPaidKeys`, `summarizeMonth`, `DueItemsList` | `DueItemView.status`, `paidAt` | Sequence |
+| 5.3 | Graceful when unavailable | `DueItemsList` | `status` is always present (available from day one) | — |
+| 5.4 | Never infer paid client-side | `DueItemsList` | — | — |
 | 6.1, 6.2, 6.3 | Category breakdown, `null` → one bucket, desc by amount | `summarizeMonth`, `CategoryBreakdown` | `CategorySubtotal` | — |
 | 6.4 | No taxonomy, labels as stored | `summarizeMonth` | `CategorySubtotal.label: string \| null` | — |
 | 7.1, 7.2, 7.3 | Loading / error / empty states | `DashboardPage` + shared UI primitives | `useApiQuery` `QueryState` | — |
@@ -212,6 +225,7 @@ sequenceDiagram
 | 8.5 | Owner-scoped | `DashboardRepository` | — | — |
 | 8.6 | Read-only | `DashboardRepository` (no write methods) | — | — |
 | 8.7 | Shared contract, no duplicated shape | `packages/shared/src/api/dashboard.ts` | imported by **both** sides | — |
+| 8.8 | Status computed server-side | `summarizeMonth` (`dueStatus`) | `DueItemView.status` | — |
 | 9.1, 9.2 | Paid read via existing marker semantics, no mutation | `DashboardRepository.findPaidKeys` + `reminder-target` helpers | `DueItemView.targetType`, `targetKey` | Sequence |
 | 9.3 | Forward-compatible with `bill-payments` | contract carries the same identity `PUT /reminders/paid` accepts | — | — |
 | 10.1, 10.2, 10.3 | Determinism, isolation, minor-unit tests | test suites (see Testing Strategy) | — | — |
@@ -234,7 +248,8 @@ sequenceDiagram
 | `MonthHeader` | Web / feature | Human-readable month label | 1.4 | `formatMonth` (P0) | — |
 | `TotalsPanel` | Web / feature | Total + per-source subtotals, per currency | 2.1, 2.3, 3.3, 3.4 | `formatMoney` (P0) | — |
 | `CategoryBreakdown` | Web / feature | Category table | 6.1–6.3 | `formatMoney` (P0) | — |
-| `UpcomingDueList` | Web / feature | Due items with paid badge; own empty sub-state | 4.1–4.4, 5.1–5.4 | `formatMoney`, `formatDate` (P0) | — |
+| `DueSummaryPanel` | Web / feature | "Overdue" and "Still to pay" counts + amounts, per currency | 4.4 | `formatMoney` (P0) | — |
+| `DueItemsList` | Web / feature | Due items with status badge and "earlier month" marker; own empty sub-state | 4.1–4.8, 5.1–5.4 | `formatMoney`, `formatDate` (P0) | — |
 | `formatMonth` | Web / lib | `"2026-07"` → `"July 2026"`, no `Date`, no locale data | 1.4, 7.4 | — | Service |
 
 Detailed blocks below cover only the components that introduce a new boundary.
@@ -249,7 +264,7 @@ render.
 | Field | Detail |
 | ----- | ------ |
 | Intent | Turn the month's ledger rows + paid markers into the response view — the only place financial aggregation happens |
-| Requirements | 2.1, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1, 4.2, 5.1, 5.2, 6.1, 6.2, 6.3, 6.4, 8.3 |
+| Requirements | 2.1, 2.3, 2.4, 3.1, 3.2, 3.3, 3.4, 4.1–4.5, 5.1, 5.2, 6.1, 6.2, 6.3, 6.4, 8.3, 8.8 |
 
 **Responsibilities & Constraints**
 
@@ -258,15 +273,27 @@ render.
   (always all four, zero when absent — 3.3), and the category breakdown
   (`categoryLabel`, `null` collapsing into exactly one bucket — 6.2, sorted by
   amount descending, ties broken by label ascending for stable output — 6.3).
-- Derive due items (4.1, D2 in research.md): `RECURRING` rows are one item each;
-  `CARD` rows are grouped by `(creditCardId, invoiceCycle, currency)` into one
-  item per invoice whose amount is the sum of its rows and whose `dueDate` is
-  the shared `transactionDate`; `MANUAL` and `IMPORTED` rows never produce due
-  items. Keep only items with `dueDate >= today` (4.1), sort by `dueDate`
-  ascending then `targetKey` ascending (4.2, and determinism).
-- Attach paid state from the marker set keyed by `targetKey` (5.1). **Paid items
-  remain in the list, flagged** (5.2) — unlike the reminders selection, which
-  excludes them.
+- Derive payable items (D2 in research.md) from **both** row sets with the same
+  rule: `RECURRING` rows are one item each; `CARD` rows are grouped by
+  `(creditCardId, invoiceCycle, currency)` into one item per invoice whose
+  amount is the sum of its rows and whose `dueDate` is the shared
+  `transactionDate`; `MANUAL` and `IMPORTED` rows never produce payable items.
+- Attach paid state from the marker set keyed by `targetKey` and compute the
+  status with one pure rule (8.8, D9):
+  `status = marker ? "PAID" : dueDate < today ? "OVERDUE" : "DUE"`.
+- Build the due list (4.1, D9): **every** payable item of the month (any due
+  date, any status — paid items stay listed, flagged, 5.2, unlike the reminders
+  selection), plus the carry-over payable items whose status is `OVERDUE`
+  (carry-over `PAID` items are dropped; a carry-over item can never be `DUE`
+  because its due date precedes `monthStart <= today`). Carry-over items get
+  `carriedOver: true`.
+- Order (4.3): status rank `OVERDUE` → `DUE` → `PAID`, then `dueDate`
+  ascending, then `targetKey` ascending (determinism).
+- `dueTotals` (4.4): per currency, the count and `bigint` sum of `OVERDUE` items
+  and of `DUE` items across the whole due list (carry-over included).
+- **Carry-over rows feed only the due list.** They never touch `currencies`
+  (totals, `bySource`, `byCategory`) or `hasActivity` (4.5) — the month's
+  totals remain a function of the month's rows alone.
 - **Money never leaves `bigint` inside this function.** Accumulators are
   `bigint`; the single conversion to `number` happens through `toAmountNumber`
   when building the view (8.3, 10.3). No `+` on `number` amounts anywhere.
@@ -313,17 +340,26 @@ export function summarizeMonth(input: {
   monthEnd: string; // YYYY-MM-DD
   today: string; // YYYY-MM-DD (UTC calendar date of the injected clock)
   rows: readonly LedgerRow[];
+  /** RECURRING/CARD rows of the look-back window (before monthStart). */
+  carryOverRows: readonly LedgerRow[];
   markers: readonly PaidMarker[];
 }): MonthlySummaryView;
+
+/** The single status rule (8.8). */
+export function dueStatus(dueDate: string, today: string, paid: boolean): DueStatus;
 ```
 
-- **Preconditions**: every row's `transactionDate` lies within
-  `[monthStart, monthEnd]` (guaranteed by the repository's `where`); `CARD` rows
-  carry `creditCardId` and `invoiceCycle` (schema CHECK constraint).
+- **Preconditions**: every `rows` entry's `transactionDate` lies within
+  `[monthStart, monthEnd]`; every `carryOverRows` entry is `RECURRING` or
+  `CARD` with `transactionDate < monthStart` (both guaranteed by the
+  repository's `where`); `CARD` rows carry `creditCardId` and `invoiceCycle`
+  (schema CHECK constraint).
 - **Postconditions**: `currencies` is non-empty (a zeroed `BRL` block when there
-  are no rows — 2.4); `hasActivity === (rows.length > 0)`; every
-  `upcomingDueItems[i].dueDate >= today`; the sum of `bySource` amounts equals
-  `totalMinor` within each currency block.
+  are no rows — 2.4); `hasActivity === (rows.length > 0)`; every carry-over due
+  item has `status === "OVERDUE"` and `carriedOver === true`; every
+  `status === "DUE"` item has `dueDate >= today`; every `status === "OVERDUE"`
+  item has `dueDate < today`; the sum of `bySource` amounts equals `totalMinor`
+  within each currency block; `carryOverRows` change nothing in `currencies`.
 - **Invariants**: no arithmetic across currencies; each row contributes to
   exactly one source subtotal and exactly one category bucket (3.2); output is a
   deterministic function of the inputs.
@@ -404,6 +440,10 @@ interface DashboardService {
   `where: { userId, transactionDate: { gte, lte } }`, selecting the fields of
   `LedgerRow` plus `creditCard: { select: { label: true } }`. Served by
   `@@index([userId, transactionDate, id])`; no new index.
+- `findPayableRows(userId, start, end)` — one `transaction.findMany` with
+  `where: { userId, source: { in: ["RECURRING", "CARD"] }, transactionDate:
+  { gte, lte } }` for the look-back window (`end` = the day before
+  `monthStart`), same `select` as `findMonthRows`. Served by the same index.
 - `findPaidKeys(userId, keys)` — one `paymentMarker.findMany` restricted to
   `{ userId, targetKey: { in: keys } }`, returning `targetKey` + `paidAt`. Empty
   `keys` short-circuits to `[]` without a query.
@@ -422,14 +462,20 @@ interface DashboardService {
   (7.1), `<ErrorState/>` with generic message + `requestId` + retry (7.2),
   `<EmptyState/>` with guidance and a primary action linking to `/expenses`
   (7.3), or the loaded composition: `<MonthHeader/>`, one `<TotalsPanel/>` per
-  currency block, `<CategoryBreakdown/>`, `<UpcomingDueList/>`.
+  currency block, `<DueSummaryPanel/>`, `<CategoryBreakdown/>`, `<DueItemsList/>`.
 - `<TotalsPanel/>` renders the total, the four source subtotals, and — because
   D1 is a genuine user-facing surprise — a short plain-language note that card
   invoices count in the month they are **due**.
-- `<UpcomingDueList/>` renders a semantic `<Table/>` (7.5) of due items with a
-  paid/unpaid indicator that is **not colour-only** (a text badge; 5.2, 7.5),
-  and its own empty sub-state when the list is empty but the month has activity
-  (4.4).
+- `<DueSummaryPanel/>` renders, per currency, "Overdue: N · R$ x" and "Still to
+  pay: N · R$ y" straight from `dueTotals` (4.4) — no client-side counting.
+- `<DueItemsList/>` renders a semantic `<Table/>` (7.5) of `dueItems` in the
+  order received, each with a **text** status badge — "Overdue", "Due", "Paid"
+  — that is never colour-only (4.8, 5.2, 7.5), and an "earlier month" marker
+  on `carriedOver` items (4.5). It has its own empty sub-state when the list is
+  empty but the month has activity (4.7).
+- The page may render the due list even when `hasActivity` is false if
+  `dueItems` is non-empty (carried-over overdue bills in an otherwise empty
+  month): the empty state then sits next to the list instead of replacing it.
 - Every amount goes through `formatMoney(amountMinor, "BRL")`, every date
   through `formatDate`, the month label through the new `formatMonth` — no
   `Date` construction, no float math (7.4).
@@ -461,6 +507,11 @@ graph LR
    one source subtotal and one category bucket (3.2). No row is read twice.
 3. **Payable items** — only `RECURRING` rows and `CARD` invoices are payable.
    `MANUAL`/`IMPORTED` are already-incurred spend and never appear as due items.
+3a. **Due status** — `PAID` if a marker exists; otherwise `OVERDUE` when
+   `dueDate < today`, else `DUE`. Computed once, server-side (8.8).
+3b. **Carry-over** — unpaid payable items of the 3 calendar months before the
+   month are listed as `OVERDUE` with `carriedOver: true`; they never count in
+   the month's totals (4.5).
 4. **Invoice identity** — a card invoice is `(creditCardId, invoiceCycle)`; its
    paid marker is invoice-level. The grouping key additionally carries
    `currency` to keep rule 5 unbreakable.
@@ -494,6 +545,8 @@ export interface CurrencySummary {
   byCategory: CategorySubtotal[]; // amount descending
 }
 
+export type DueStatus = "OVERDUE" | "DUE" | "PAID";
+
 export interface DueItemView {
   /** Canonical paid identity — the same one `PUT /reminders/paid` accepts (9.1). */
   targetType: DueTargetType;
@@ -503,8 +556,20 @@ export interface DueItemView {
   dueDate: string; // YYYY-MM-DD
   amountMinor: number; // a card invoice is the SUM of its rows
   currency: string;
-  paid: boolean;
-  paidAt: string | null; // ISO instant (marker semantics), null when unpaid
+  /** Computed server-side from the injected today + markers (4.2, 8.8). */
+  status: DueStatus;
+  paidAt: string | null; // ISO instant (marker semantics), null unless PAID
+  /** True when the item belongs to an earlier month of the look-back window (4.5). */
+  carriedOver: boolean;
+}
+
+/** Per-currency "how much is late / still to pay" (4.4). */
+export interface DueTotals {
+  currency: string;
+  overdueCount: number;
+  overdueMinor: number;
+  dueCount: number;
+  dueMinor: number;
 }
 
 export interface MonthlySummaryView {
@@ -516,8 +581,12 @@ export interface MonthlySummaryView {
   hasActivity: boolean;
   /** Never empty: a month with no rows yields one zeroed BRL block (2.4). */
   currencies: CurrencySummary[];
-  /** dueDate >= today, within the month, ascending (4.1, 4.2). */
-  upcomingDueItems: DueItemView[];
+  /** Month payable items + carried-over OVERDUE items; OVERDUE → DUE → PAID, then dueDate (4.1, 4.3). */
+  dueItems: DueItemView[];
+  /** One entry per currency present in dueItems; empty when dueItems is empty (4.4). */
+  dueTotals: DueTotals[];
+  /** First month of the overdue look-back window, YYYY-MM (D9). */
+  overdueLookbackFrom: string;
 }
 ```
 
@@ -545,7 +614,8 @@ The feature adds **no new error code**. It rides the canonical envelope
 - **Data-shaped edge cases that are *not* errors**: an empty month (→ zeroed
   summary + `hasActivity: false`), a month whose due items are all paid (→ list
   renders, all flagged paid), a month before the user's first transaction (→
-  same as empty).
+  same as empty), an empty month with carried-over overdue bills (→
+  `hasActivity: false` **and** a non-empty `dueItems`).
 
 ### Monitoring
 
@@ -565,9 +635,17 @@ A `BigInt` overflow in `toAmountNumber` throws → `INTERNAL_ERROR` with a
   one bucket, ordered by amount descending (6.2, 6.3).
 - `summarizeMonth`: card rows of one `(card, cycle)` collapse into **one** due
   item whose amount is the row sum (D2); `MANUAL`/`IMPORTED` rows produce **no**
-  due items; a due item with a marker is `paid: true` and still listed (5.2).
-- `summarizeMonth`: `dueDate < today` is excluded, `dueDate === today` is
-  included (4.1 boundary); ordering is deterministic.
+  due items; a due item with a marker is `PAID` and still listed (5.2).
+- `dueStatus`: `dueDate === today` unpaid → `DUE`; `dueDate === today − 1`
+  unpaid → `OVERDUE`; any date with a marker → `PAID` (8.8 boundary).
+- `summarizeMonth`: an unpaid month item due before today is listed as
+  `OVERDUE` (the 4.1 regression this revision fixes).
+- `summarizeMonth`: carry-over — an unpaid look-back item is listed as
+  `OVERDUE` + `carriedOver`; a paid look-back item is dropped; carry-over rows
+  change **nothing** in `currencies` or `hasActivity` (4.5).
+- `summarizeMonth`: ordering `OVERDUE` → `DUE` → `PAID`, then due date, then
+  `targetKey`; `dueTotals` counts and sums per currency, never across
+  currencies (4.3, 4.4).
 - `monthRange`: February, a 31-day month, and a December→January boundary
   (10.1); `monthOf` on a UTC instant.
 
@@ -580,14 +658,20 @@ A `BigInt` overflow in `toAmountNumber` throws → `INTERNAL_ERROR` with a
   produce the expected total, subtotals, and a single grouped invoice due item.
 - **Read-only**: row and marker counts are unchanged after the request (8.6, 9.2).
 - **Paid marker** written via the existing `PUT /reminders/paid` path surfaces as
-  `paid: true` on the dashboard's matching due item (9.1).
+  `status: "PAID"` on the dashboard's matching due item (9.1).
+- **Carry-over end-to-end**: an unpaid `RECURRING` row two months back appears
+  as `OVERDUE` + `carriedOver`; a row four months back (outside the window)
+  does not; neither changes the month's `totalMinor`.
 
 ### Frontend Tests (`dashboard-page.test.tsx`, Vitest + Testing Library)
 
 - The four view states, with the API client module mocked (10.4).
 - Error state renders the generic message **and** the `requestId`, and the retry
   action refetches (7.2).
-- A paid due item is announced as paid by text, not colour alone (5.2, 7.5).
+- Each status is announced by text — "Overdue", "Due", "Paid" — not colour
+  alone, and carried-over items show the "earlier month" marker (4.5, 4.8, 5.2,
+  7.5).
+- `DueSummaryPanel` renders the backend counts/amounts verbatim (4.4).
 - Money and dates render through the shared formatters (`R$ 1.234,56`,
   `2026-07-15`); `formatMonth("2026-07") === "July 2026"` (7.4).
 
@@ -611,8 +695,9 @@ Every backend test injects a `FixedClock`; no test may call `new Date()` for
 
 ## Performance & Scalability
 
-- One indexed range query per request over `@@index([userId, transactionDate,
-  id])` plus one keyed marker query. For a personal-finance user a month is tens
+- Two indexed range queries per request over `@@index([userId, transactionDate,
+  id])` (the month, and the 3-month look-back restricted to payable sources)
+  plus one keyed marker query. For a personal-finance user a month is tens
   to low hundreds of rows; in-memory aggregation is the cheaper and far more
   testable option (research.md, D6).
 - If a month ever grows past a few thousand rows, the aggregation moves into SQL

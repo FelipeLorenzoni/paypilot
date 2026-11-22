@@ -253,7 +253,42 @@
   21:00 local on the last day. This is the behavior the reminder pipeline
   already has; changing it is a repo-wide decision, not a dashboard decision.
 
+### D9 — Due status `OVERDUE` / `DUE` / `PAID`, with a 3-month carry-over (revision 2026-11-21)
+
+- **Context**: the first design kept only due items with `dueDate >= today`.
+  An unpaid bill therefore vanished from the dashboard the day after its due
+  date — exactly when the user most needs to see it. Found during design review.
+- **Alternatives Considered**:
+  1. **Keep the filter, defer "overdue" to `bill-payments`** — ships a page that
+     hides late bills; rejected.
+  2. **Status within the current month only** — fixes the same-month case, but
+     a bill due on the 30th and unpaid disappears when the month flips.
+  3. **Status plus carry-over of unpaid items from earlier months** — selected.
+  4. **Unbounded carry-over** — rejected: until `bill-payments` ships a
+     mark-paid UX, most historical bills have no marker and would all surface
+     as overdue forever.
+- **Selected Approach**: every payable item gets one server-computed status:
+  `PAID` (marker exists) / `OVERDUE` (unpaid, `dueDate < today`) / `DUE`
+  (unpaid, `dueDate >= today`). The due list holds all of the month's payable
+  items plus **unpaid** payable items of the `OVERDUE_LOOKBACK_MONTHS = 3`
+  calendar months before the month, flagged `carriedOver`. Carry-over rows
+  feed only the due list and `dueTotals`, never the month's totals.
+- **Rationale**: matches how the user actually tracks bills (late / to pay /
+  paid), keeps D1's cash-out totals intact, and stays read-only with no schema
+  change. A bounded window keeps the query cheap and the list honest while
+  paid markers are still sparse.
+- **Trade-offs**: an unpaid bill older than 3 months drops off the dashboard;
+  the constant can be revisited (or made a user setting) once `bill-payments`
+  makes marking paid routine. Until then, items paid outside PayPilot show as
+  `OVERDUE` until marked via `PUT /reminders/paid`.
+
 ## Risks & Mitigations
+
+- **Unmarked payments show as overdue (D9).** Until `bill-payments` adds a
+  mark-paid control, a bill paid outside PayPilot stays `OVERDUE` for up to 3
+  months. → Mitigation: the existing `PUT /reminders/paid` already works and
+  the contract carries the `targetType`/`targetKey` it needs; `bill-payments`
+  is the next spec.
 
 - **Card purchases appear in the month they are due, not the month they were
   made (D1).** The largest source of "the number looks wrong" support load.
